@@ -1,0 +1,1185 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>2026학년도 2학기 학교생활기록부 점검 시스템</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  </script>
+  <style>
+    :root {
+      --primary: #1e40af; --primary-light: #3b82f6; --primary-dark: #1e3a8a;
+      --success: #059669; --danger: #dc2626; --warning: #d97706;
+      --border: #e2e8f0; --text-dark: #0f172a; --text-muted: #64748b;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Pretendard", "Segoe UI", Roboto, sans-serif; }
+    body { background-color: #f1f5f9; color: var(--text-dark); line-height: 1.6; }
+    header.navbar { display: flex; justify-content: space-between; align-items: center; padding: 16px 40px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: rgba(255,255,255,0.95); backdrop-filter: blur(8px); z-index: 100; }
+    .logo { font-size: 18px; font-weight: 800; color: var(--primary-dark); display: flex; align-items: center; gap: 8px; }
+    .container { max-width: 1240px; margin: 20px auto 80px; padding: 0 20px; display: flex; flex-direction: column; gap: 16px; }
+    .header-card { background: linear-gradient(135deg, #2563eb, #1e3a8a); color: white; padding: 24px 28px; border-radius: 14px; box-shadow: 0 4px 12px rgba(37,99,235,0.15); }
+    .badge-pill { background: rgba(255,255,255,0.2); padding: 3px 12px; border-radius: 9999px; font-size: 12px; font-weight: 600; display: inline-block; margin-bottom: 8px; }
+    .header-card h2 { font-size: 24px; font-weight: 700; margin-bottom: 6px; }
+    .header-meta { font-size: 13px; color: #cbd5e1; }
+    .filter-card { background: white; border: 1px solid var(--border); border-radius: 12px; padding: 16px 20px; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+    .grade-tabs { display: flex; gap: 8px; }
+    .grade-tab { padding: 8px 24px; border-radius: 8px; border: 1px solid #cbd5e1; background: white; font-size: 14px; font-weight: 700; color: var(--text-muted); cursor: pointer; transition: all 0.2s; }
+    .grade-tab.active { background: var(--primary-dark); color: white; border-color: var(--primary-dark); }
+    .area-chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .area-chip { padding: 6px 14px; border-radius: 9999px; font-size: 13px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; border: 1px solid transparent; transition: all 0.2s; }
+    .chip-done { background: #059669; color: white; }
+    .chip-done.active { outline: 3px solid #6ee7b7; }
+    .chip-fix { background: #fee2e2; color: #dc2626; border-color: #f87171; }
+    .chip-fix.active { outline: 3px solid #fca5a5; }
+    .chip-check { background: #fef3c7; color: #b45309; border-color: #fcd34d; }
+    .chip-check.active { outline: 3px solid #fde68a; }
+    .chip-idle { background: #f1f5f9; color: #64748b; border-color: #cbd5e1; }
+    .chip-idle.active { background: #e2e8f0; color: #1e293b; outline: 2px solid #94a3b8; }
+    .upload-zone { background: white; border: 2px dashed #93c5fd; border-radius: 12px; padding: 26px; text-align: center; cursor: pointer; transition: all 0.2s ease; }
+    .upload-zone:hover { background: #eff6ff; border-color: #2563eb; }
+    .upload-zone input { display: none; }
+    .upload-icon { font-size: 32px; margin-bottom: 6px; }
+    .upload-title { font-size: 16px; font-weight: 700; color: var(--primary-dark); }
+    .upload-desc { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+    .status-analyzing { display: none; color: #2563eb; font-weight: 700; margin-top: 8px; }
+    .alert-banner { background: #fffbeb; border: 1px solid #fcd34d; border-radius: 12px; padding: 16px 20px; display: flex; gap: 14px; align-items: flex-start; }
+    .alert-title { font-size: 14px; font-weight: 700; color: #92400e; display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+    .alert-badge { background: white; border: 1px solid #f59e0b; color: #b45309; padding: 1px 8px; border-radius: 9999px; font-size: 11.5px; }
+    .alert-desc { font-size: 13.5px; color: #b45309; }
+    .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+    .summary-card { background: white; border: 1px solid var(--border); border-radius: 12px; padding: 16px 20px; }
+    .summary-card .label { font-size: 12.5px; color: var(--text-muted); margin-bottom: 4px; }
+    .summary-card .value { font-size: 24px; font-weight: 800; display: flex; align-items: baseline; gap: 2px; }
+    .summary-card .value span { font-size: 15px; font-weight: 500; }
+    .val-total { color: #1e293b; } .val-success { color: #059669; } .val-danger { color: #dc2626; } .val-warning { color: #d97706; }
+    .content-box { background: white; border-radius: 12px; border: 1px solid var(--border); overflow: hidden; }
+    .table-container { padding: 20px; }
+    .section-title { font-size: 16px; font-weight: 700; color: var(--primary-dark); display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+    .section-title::before { content: ""; width: 4px; height: 16px; background: #2563eb; border-radius: 2px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { padding: 12px 14px; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }
+    th { background-color: #f8fafc; color: var(--text-muted); font-weight: 600; }
+    .td-num { width: 50px; text-align: center; color: var(--text-muted); font-weight: 700; }
+    .td-area { width: 85px; text-align: center; font-weight: 700; color: #475569; }
+    .td-name { width: 220px; font-weight: 600; color: #1e293b; }
+    .td-status { width: 110px; text-align: center; }
+    .status-tag { display: inline-block; padding: 5px 12px; border-radius: 6px; font-size: 12px; font-weight: 700; }
+    .status-ok { background: #ecfdf5; color: #059669; }
+    .status-fail { background: #fef2f2; color: #dc2626; }
+    .status-wait { background: #f1f5f9; color: #64748b; }
+    .status-double { background: #eff6ff; color: #1d4ed8; }
+    .detected-box { margin-top: 10px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; max-height: 550px; overflow-y: auto; }
+    .detected-box.double-check-box { background: #eff6ff; border-color: #bfdbfe; }
+    .detected-count-badge { font-size: 12px; font-weight: 700; color: #b91c1c; margin-bottom: 4px; }
+    .detected-count-badge.blue { color: #1d4ed8; }
+    .detected-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding-bottom: 8px; border-bottom: 1px dashed #fca5a5; }
+    .detected-box.double-check-box .detected-row { border-bottom-color: #bfdbfe; }
+    .detected-row:last-child { border-bottom: none; padding-bottom: 0; }
+    .detected-text { flex: 1; font-size: 13px; color: #7f1d1d; line-height: 1.65; word-break: keep-all; }
+    .detected-box.double-check-box .detected-text { color: #1e40af; }
+    .item-select { width: 105px; padding: 4px 6px; border-radius: 5px; font-size: 11.5px; font-weight: 700; cursor: pointer; outline: none; flex-shrink: 0; transition: all 0.2s; }
+    .select-need-fix { background-color: #fee2e2; border: 1.5px solid #ef4444; color: #dc2626; }
+    .select-need-check { background-color: #fef3c7; border: 1.5px solid #f59e0b; color: #b45309; }
+    .select-fixed { background-color: #dbeafe; border: 1.5px solid #3b82f6; color: #1d4ed8; }
+    .select-done { background-color: #d1fae5; border: 1.5px solid #10b981; color: #047857; }
+    .page-tag { background: #dc2626; color: white; font-weight: 700; font-size: 11px; padding: 2px 7px; border-radius: 4px; margin-right: 6px; display: inline-block; }
+    .page-tag.blue { background: #2563eb; }
+    .student-badge { background: #f1f5f9; color: #334155; border: 1px solid #cbd5e1; font-weight: 800; font-size: 11.5px; padding: 1px 7px; border-radius: 4px; margin-right: 6px; display: inline-block; }
+    .highlight-word { background-color: #fef08a; color: #854d0e; font-weight: 700; padding: 1px 4px; border-radius: 3px; border: 1px solid #fde047; }
+  </style>
+</head>
+<body>
+
+  <header class="navbar">
+    <div class="logo">
+      <span>📑</span> 2026 대부고 학생부 기재 점검 시스템 <span class="badge-status-feature">학년별·영역별 통합 검토</span>
+    </div>
+  </header>
+
+  <main class="container">
+
+    <div class="header-card">
+      <div class="badge-pill">2026학년도 2학기 · 학교생활기록부 점검표</div>
+      <h2>2026학년도 2학기 학교생활기록부 점검 대시보드</h2>
+      <div class="header-meta" id="fileMetaInfo">
+        대부고등학교 · 2026학년도 2학기 나이스 기재요령 점검표 기준 전수 검사 대기 중
+      </div>
+    </div>
+
+    <section class="filter-card">
+      <div class="grade-tabs">
+        <button class="grade-tab active" onclick="switchGrade(1, this)">1학년</button>
+        <button class="grade-tab" onclick="switchGrade(2, this)">2학년</button>
+        <button class="grade-tab" onclick="switchGrade(3, this)">3학년</button>
+      </div>
+      <div class="area-chips" id="areaChipsContainer"></div>
+    </section>
+
+    <div class="upload-zone" onclick="document.getElementById('pdfInput').click()">
+      <input type="file" id="pdfInput" accept=".pdf, .txt" onchange="handleFile(event)">
+      <div class="upload-icon">📄</div>
+      <div class="upload-title" id="uploadTitle">생활기록부 PDF 파일을 업로드하세요</div>
+      <div class="upload-desc" id="uploadDesc">클릭하거나 PDF 파일을 이곳에 끌어다 놓으세요. (학년별 10대 영역 기재 기준 전수 대조)</div>
+      <div class="status-analyzing" id="loadingText">⏳ PDF 페이지별 텍스트 및 위치를 정밀 분석하고 있습니다...</div>
+    </div>
+
+    <div class="alert-banner">
+      <div style="font-size:22px;">📌</div>
+      <div>
+        <div class="alert-title">
+          <span>영역별 실시간 점검 리포트</span>
+          <span class="alert-badge" id="alertBadge">파일 대기 중</span>
+        </div>
+        <div class="alert-desc" id="reportSummary">
+          파일을 업로드하면 선택된 학년의 <strong>점검할 항목을 전수 점검</strong>하고, 수정사항 및 더블체크 항목을 영역별로 즉시 안내합니다.
+        </div>
+      </div>
+    </div>
+
+    <div class="summary-grid">
+      <div class="summary-card"><div class="label">점검 대상 항목</div><div class="value val-total" id="statTotal">0<span>개</span></div></div>
+      <div class="summary-card"><div class="label">적합 (이상 없음)</div><div class="value val-success" id="statPass">0<span>개</span></div></div>
+      <div class="summary-card"><div class="label">수정·확인 필요 항목</div><div class="value val-danger" id="statFail">0<span>건</span></div></div>
+      <div class="summary-card"><div class="label">검토 대기</div><div class="value val-warning" id="statPending">0<span>건</span></div></div>
+    </div>
+
+    <div class="content-box">
+      <div class="table-container">
+        <div class="section-title" id="currentSectionTitle">전체 점검 체크리스트 결과</div>
+        <table>
+          <thead>
+            <tr>
+              <th class="td-num">번호</th>
+              <th class="td-area">영역</th>
+              <th class="td-name">검토 항목</th>
+              <th>확인 점검 내용 및 실제 검출 내역</th>
+              <th class="td-status">판정</th>
+            </tr>
+          </thead>
+          <tbody id="checklistBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </main>
+
+  <script>
+    // =========================================================
+    // 핵심 헬퍼 함수
+    // =========================================================
+    function escapeRegExp(string) {
+      return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    // ===== 학생 단위 분리 / 줄 단위 헬퍼 =====
+    const NAME_STOP = ['생년월일','주민등록','성별','학생정보','반번호','학교','담임'];
+    const statusStore = {}; // 드롭다운 선택값 유지용
+
+    function groupByStudent(raw) {
+      const map = new Map(); let cur = "학생";
+      raw.forEach(p => {
+        let name = null, m;
+        const re = /성\s*명\s*[:\s]*([가-힣]{2,4})/g;
+        while ((m = re.exec(p.text)) !== null) {
+          if (!NAME_STOP.some(s => m[1].startsWith(s))) name = m[1];
+        }
+        if (name) cur = name;
+        if (!map.has(cur)) map.set(cur, []);
+        map.get(cur).push(p);
+      });
+      return map;
+    }
+    function rawLines(p) {
+      return cleanNICEWatermarks(p.text).split('\n').map(l => l.replace(/\s+/g, ' ').trim()).filter(Boolean);
+    }
+    function spacedRegex(word) { return new RegExp(word.split('').map(escapeRegExp).join('\\s*')); }
+    function normDate(s) {
+      const m = s.match(/(\d{4})\.(\d{1,2})\.(\d{1,2})/);
+      return m ? `${m[1]}.${m[2].padStart(2,'0')}.${m[3].padStart(2,'0')}.` : '';
+    }
+
+    // 봉사활동 실적 행 추출 (일자 + (학교)/(개인)/(기관) 패턴)
+    function getVolunteerRows(pages) {
+      const rows = [];
+      pages.forEach(p => {
+        const lines = rawLines(p);
+        lines.forEach((line, i) => {
+          const c = line.replace(/\s/g, '');
+          const m = c.match(/(\d{4}\.\d{1,2}\.\d{1,2}\.?)(?:-(\d{4}\.\d{1,2}\.\d{1,2}\.?))?\((?:학교|개인|기관)\)/);
+          if (!m) return;
+          const h = line.match(/(\d{1,3})\s+(\d{1,4})\s*$/);
+          rows.push({
+            page: p.page, line,
+            start: normDate(m[1]), end: m[2] ? normDate(m[2]) : null,
+            hours: h ? parseInt(h[1], 10) : null,
+            ctx: lines.slice(Math.max(0, i - 2), i + 3).join(' ')
+          });
+        });
+      });
+      return rows;
+    }
+
+    const REQUIRED_VOL_DATES = ['2026.03.27.', '2026.05.15.', '2026.07.20.', '2026.08.18.', '2027.01.07.'];
+    const AUTONOMOUS_CLUBS = ['엑시트', '대부얼', '방송부'];
+    const CLUB_VOL_HOURS = [['심장뛰는', 5], ['유니버셜뮤직', 2], ['온빛나눔', 1], ['미나리', 1], ['스위트랩', 1], ['성장숲온길', 2]];
+
+    // 나이스 워터마크 정제 함수
+    function cleanNICEWatermarks(text) {
+      if (!text) return "";
+      return text
+        .replace(/[대\s*부\s*고\s*등\s*학\s*교]*\s*\/\s*\d{4}\.\d{1,2}\.\d{1,2}[^/\n]*\/[\d.*]+\/[가-힣\w\s]+/g, ' ')
+        .replace(/[대\s*부\s*고\s*등\s*학\s*교]*\s*\d{4}년\s*\d{1,2}월\s*\d{1,2}일\s*\d+\s*\/\s*\d+\s*반\s*\d+\s*번\s*호\s*\d+\s*성\s*명\s*[가-힣a-zA-Z\s]+/g, ' ')
+        .replace(/반\s*\d+\s*번\s*호\s*\d+\s*성\s*명\s*[가-힣a-zA-Z\s]+/g, ' ')
+        .replace(/[\d.*]{5,}\/[가-힣]+/g, ' ');
+    }
+
+    // 키워드 탐색 함수
+    function findKeywordLocations(narrativePages, targets, strictWords = []) {
+      const results = [];
+      narrativePages.forEach(p => {
+        p.sentences.forEach(sentence => {
+          const cleanSentence = sentence.trim();
+          if (!cleanSentence || cleanSentence.length < 2) return;
+          if (cleanSentence.includes("10.131.") || (cleanSentence.includes("반") && cleanSentence.includes("번호") && cleanSentence.includes("성명"))) return;
+          if (cleanSentence.includes("(학교)대부고등학교") || cleanSentence.includes("대부중학교 제3학년") || cleanSentence.includes("대부고등학교 제1학년") || cleanSentence.includes("대부고등학교장")) return;
+
+          targets.forEach(t => {
+            if (cleanSentence.includes(t)) results.push({ page: p.page, word: t, snippet: cleanSentence });
+          });
+          strictWords.forEach(sw => {
+            const regex = new RegExp(`(^|[^a-zA-Z가-힣])${escapeRegExp(sw)}([^a-zA-Z가-힣]|$)`);
+            if (regex.test(cleanSentence)) results.push({ page: p.page, word: sw, snippet: cleanSentence });
+          });
+        });
+      });
+      return results;
+    }
+
+    const AREAS = ["전체", "공통", "출결상황", "수상경력", "자율", "동아리", "진로", "봉사", "세특", "독서", "행특"];
+
+    // =========================================================
+    // 기재점검 규칙 데이터베이스
+    // =========================================================
+    const ALL_RULES = [
+      // === [공통] ===
+      {
+        id: 1, area: "공통", grade: [1,2,3],
+        title: "사교육 유발 요인 기재 금지",
+        req: "공인어학시험, 교내외 대회 성적/수상, 모의고사 성적, 논문, 도서출간, 해외활동, 부모지위, 장학금, 상호명(유튜브, 인스타그램, 챗 GPT, 엑셀 등) 기재 금지",
+        check: function(f, n, raw) {
+          const targets = ['토익', 'TOEIC', '토플', 'TOEFL', '텝스', 'TEPS', 'KMO', '영재교육원', '국제기구', 'OECD', '올림픽', '유튜브', '인스타그램', '챗 GPT', 'ChatGPT', '엑셀', '한국전력공사', '통계청'];
+          const issues = findKeywordLocations(n, targets, ['UN']);
+          return issues.length > 0 ? { pass: false, issues, msg: `금지 키워드 및 상호명 총 ${issues.length}건 검출` } : { pass: true, msg: "사교육 유발 요인 미검출" };
+        }
+      },
+      {
+        id: 2, area: "공통", grade: [1,2,3],
+        title: "고교블라인드 위반 여부",
+        req: "(고교블라인드) 학생 출신 고교를 알 수 있는 내용(학교명, 재단명, 학교 축제명, 학교 별칭 등) 기재 금지 (※ 인적·학적, 봉사, 수상, 성적표, 하단 꼬리말 제외)",
+        check: function(f, n, raw) {
+          const issues = findKeywordLocations(n, ['대부', '고등학교']);
+          return issues.length > 0 ? { pass: false, issues, msg: `고교 블라인드 위반 단어('대부' 등) 총 ${issues.length}건 검출` } : { pass: true, msg: "서술 영역 내 고교명 미검출" };
+        }
+      },
+      {
+        id: 3, area: "공통", grade: [1,2,3],
+        title: "1인칭 및 학생 시점 서술 금지",
+        req: "동일 문구 복사 기재 및 '나는~', '내가~' 외에도 학생 본인이 쓴 듯한 주관적 소감문·일기형 표현('느꼈다', '생각했다', '깨달았다', '다짐함' 등) 기재 금지",
+        check: function(f, n, raw) {
+          const targets = ['나는 ', '내가 ', '저의 ', '나의 ', '느꼈다', '느꼈음', '생각했다', '생각함', '깨달았다', '깨달음', '뿌듯했다', '뿌듯함', '다짐했다', '다짐함', '배웠다', '배움'];
+          const issues = findKeywordLocations(n, targets);
+          return issues.length > 0 ? { pass: false, issues, msg: `학생 시점 서술 및 1인칭 주관적 표현 총 ${issues.length}건 검출` } : { pass: true, msg: "학생 시점 및 1인칭 표현 없음 (적합)" };
+        }
+      },
+      {
+        id: 4, area: "공통", grade: [1,2,3],
+        title: "교사 미관찰 내용 기재 금지",
+        req: "아르바이트, 교외 봉사활동 등 교사가 직접 관찰할 수 없는 내용 배제 (※ 봉사활동실적란 외 서술 영역 점검)",
+        check: function(f, n, raw) {
+          const issues = findKeywordLocations(n, ['아르바이트', '알바', '교외 봉사']);
+          return issues.length > 0 ? { pass: false, issues, msg: `교사 미관찰 내용 총 ${issues.length}건 검출` } : { pass: true, msg: "교사 미관찰 활동 미기재 확인" };
+        }
+      },
+      {
+        id: 5, area: "공통", grade: [1,2,3],
+        title: "한글 입력 원칙 (영문 표현 점검)",
+        req: "학교생활기록부 문자는 한글 입력 원칙. 서술형 항목 내 모든 영문 표현(단독 알파벳 x, y 포함)은 전수 표시 (※ 단, 3D, CEO, AI 및 서식명 II는 공식 허용 예외)",
+        check: function(f, n, raw) {
+          const issues = [];
+          n.forEach(p => {
+            p.sentences.forEach(s => {
+              const clean = s.trim();
+              if (!clean || clean.length < 2 || clean.includes("10.131.") || clean.includes("학교생활기록부II")) return;
+              const stripped = clean.replace(/\b3\s*[Dd]\b/g, '').replace(/\b[Cc]\s*[Ee]\s*[Oo]\b/g, '').replace(/\b[Aa]\s*[Ii]\b/g, '').replace(/\b[Ii]{2,3}\b/g, '');
+              const eng = stripped.match(/[A-Za-z]+/g);
+              if (eng && eng.length > 0) issues.push({ page: p.page, word: eng[0], snippet: clean });
+            });
+          });
+          return issues.length > 0 ? { pass: false, issues, msg: `서술형 항목 내 규정 외 영문 표현 총 ${issues.length}건 검출` } : { pass: true, msg: "불필요한 영문 표현 미검출 (3D, CEO, AI 허용 준수)" };
+        }
+      },
+      {
+        id: 6, area: "공통", grade: [1,2,3],
+        title: "특수문자·문단구분 기호 제한",
+        req: "기재 가능: 직선 작은따옴표(') , . () / 기재 불가: 둥근 곡선 작은따옴표(‘ ’), 큰따옴표(“, ”, \"), =, ~, +, -, ·(가운데점), ?, !",
+        check: function(f, n, raw) {
+          const targets = ['·', '‘', '’', '“', '”', '"', '?', '!', '=', '~'];
+          const issues = findKeywordLocations(n, targets);
+          return issues.length > 0 ? { pass: false, issues, msg: `기재 지양 특수문자 총 ${issues.length}건 검출` } : { pass: true, msg: "서술 영역 내 허용 부호 외 특수문자 미검출" };
+        }
+      },
+      {
+        id: 7, area: "공통", grade: [1,2,3],
+        title: "명사형 종결어미 및 문장 마침표 검증",
+        req: "창체 3개 영역, 세특, 행발 서술문은 주어부터 서술어까지 완결된 문장 단위로 검사하며, 명사형 종결어미(~함., ~임., ~됨., ~이끎., ~밝힘. 등) 및 끝 온점(.) 준수 필수",
+        check: function(f, n, raw) {
+          const issues = [];
+          n.forEach(p => {
+            p.sentences.forEach(s => {
+              let clean = s.trim();
+              if (!clean || clean.length < 6 || clean.includes("10.131.") || clean.includes("대부고등학교장") || clean.includes("특기사항")) return;
+              if (!clean.endsWith('.') && !clean.endsWith('.)') && !clean.endsWith(".'")) {
+                issues.push({ page: p.page, word: clean.slice(-4), snippet: clean + " ⚠️ [문장 끝 온점(.) 누락]" });
+                return;
+              }
+              const core = clean.replace(/\s+([.)'"]+)$/, '$1').replace(/[.)'"]+$/, '').trim();
+              const lastCharCode = core.charCodeAt(core.length - 1);
+              let isValid = false;
+              if (lastCharCode >= 0xAC00 && lastCharCode <= 0xD7A3) {
+                const jong = (lastCharCode - 0xAC00) % 28;
+                if (jong === 16 || jong === 9) isValid = true;
+              }
+              if (['봄', '줌', '감'].includes(core.slice(-1))) isValid = true;
+              if (!isValid) issues.push({ page: p.page, word: core.slice(-2) + '.', snippet: clean });
+            });
+          });
+          return issues.length > 0 ? { pass: false, issues, msg: `명사형 종결어미 위반 및 온점 누락 총 ${issues.length}건 검출` } : { pass: true, msg: "명사형 종결어미 및 문장 마침표 규격 준수 확인" };
+        }
+      },
+      {
+        id: 8, area: "공통", grade: [1,2,3],
+        title: "‘대회’ 용어 기재 금지",
+        req: "학교생활기록부 전 영역에서 '대회' 단어 기재 절대 금지 (※ 수상경력 표 제외)",
+        check: function(f, n, raw) {
+          const issues = findKeywordLocations(n, ['대회']);
+          return issues.length > 0 ? { pass: false, issues, msg: `서술 영역에서 기재금지어 '대회' 단어 총 ${issues.length}건 검출` } : { pass: true, msg: "서술 영역 내 '대회' 단어 미사용 (적합)" };
+        }
+      },
+      {
+        id: 9, area: "공통", grade: [1,2,3],
+        title: "맞춤법·띄어쓰기 및 비문·어색한 문맥 점검",
+        req: "마침표(.) 뒤 띄어쓰기 누락, 조사 분리 오타, 문맥상 비문 점검",
+        check: function(f, n, raw) {
+          const issues = [];
+          n.forEach(p => {
+            p.sentences.forEach(s => {
+              const clean = s.trim();
+              if (!clean || clean.length < 8 || clean.includes("10.131.")) return;
+              const dotNoSpace = clean.match(/[가-힣]\.([가-힣]{2,})/);
+              if (dotNoSpace) {
+                issues.push({ page: p.page, word: dotNoSpace[0], snippet: clean + ` ⚠️ [마침표 뒤 띄어쓰기 누락: '${dotNoSpace[0]}']` });
+                return;
+              }
+              const josaMatch = clean.match(/[가-힣]{2,}\s+(을|를|에게|께서)\s+[가-힣]/);
+              if (josaMatch) {
+                issues.push({ page: p.page, word: josaMatch[0], snippet: clean + " ⚠️ [조사 분리 띄어쓰기 오류 의심]" });
+                return;
+              }
+              if (/(하고|하며|위해|통해|대한|있는|은|는|이|가|을|를)\.$/.test(clean)) {
+                issues.push({ page: p.page, word: clean.slice(-3), snippet: clean + " ⚠️ [서술어 누락/비문 의심]" });
+              }
+            });
+          });
+          return issues.length > 0 ? { pass: false, issues, msg: `맞춤법·띄어쓰기 오류 총 ${issues.length}건 검출` } : { pass: true, msg: "맞춤법 및 문맥 호응 양호" };
+        }
+      },
+      {
+        id: 10, area: "공통", grade: [1,2,3],
+        title: "표준 날짜 표기 형식(YYYY.MM.DD.) 검증",
+        req: "생활기록부 날짜는 년, 월, 일 뒤에 온점을 모두 찍는 형식(예: 2026.10.29.)이 원칙. 끝 온점 누락(2026.10.29), 온점 2개(2026..10.29.), 중간 띄어쓰기(2026. 10.29.) 등 잘못된 형식 정밀 검출",
+        check: function(f, n, raw) {
+          const issues = [];
+          n.forEach(p => {
+            p.sentences.forEach(s => {
+              const clean = s.trim();
+              if (!clean) return;
+              const doubleDot = clean.match(/\b\d{4}\.\.\d{1,2}\.\d{1,2}\.?/);
+              if (doubleDot) { issues.push({ page: p.page, word: doubleDot[0], snippet: clean + " ⚠️ [날짜 온점 2개(..) 오류]" }); return; }
+              const spaceDate = clean.match(/\b\d{4}\.\s+\d{1,2}\.|\b\d{4}\.\d{1,2}\.\s+\d{1,2}\./);
+              if (spaceDate) { issues.push({ page: p.page, word: spaceDate[0], snippet: clean + " ⚠️ [날짜 내 비정상 공백 오류]" }); return; }
+              const missingEndDot = clean.match(/\b(\d{4}\.\d{1,2}\.\d{1,2})(?!\.)/);
+              if (missingEndDot) issues.push({ page: p.page, word: missingEndDot[0], snippet: clean + " ⚠️ [날짜 끝 온점(.) 누락 오류]" });
+            });
+          });
+          return issues.length > 0 ? { pass: false, issues, msg: `잘못된 날짜 표기 형식 총 ${issues.length}건 검출` } : { pass: true, msg: "날짜 표준 표기 규격(YYYY.MM.DD.) 모두 준수" };
+        }
+      },
+
+      // === [출결상황] ===
+      {
+        id: 11, area: "출결상황", grade: [1,2,3],
+        title: "학적변동 사유 입력 여부",
+        req: "자퇴, 퇴학, 유급, 조기진급 등 학적변동 사유 입력 (예: 2026.06.19. 가정 사정으로 자퇴)",
+        check: function() { return { pass: true, msg: "학적 변동자 사유 코드 등록 여부 이상 없음" }; }
+      },
+      {
+        id: 12, area: "출결상황", grade: [1,2,3],
+        title: "기타결석 사유 기재 여부 (학생별 발췌)",
+        req: "출결상황 표에서 기타결석이 1일 이상 발생한 학생의 이름과 출결 특기사항을 발췌하여 사유의 정당성 확인",
+        check: function(f, n, raw) {
+          const issues = [];
+          raw.forEach(p => {
+            const lines = p.text.split('\n');
+            let studentName = "학생";
+            for (let line of lines) {
+              const nameMatch = line.match(/성\s*명\s*[:\s]*([가-힣]{2,4})/);
+              if (nameMatch) studentName = nameMatch[1];
+            }
+            for (let i = 0; i < lines.length; i++) {
+              const compact = lines[i].replace(/\s+/g, '');
+              if (compact.includes("기타") && (compact.includes("결석") || /\b[1-9]\d*일?\b/.test(lines[i]))) {
+                let reason = "특기사항 미기재 또는 확인 필요";
+                for (let j = i; j < Math.min(lines.length, i + 8); j++) {
+                  if (lines[j].includes("특기사항") || lines[j].includes("사유")) { reason = lines[j].trim(); break; }
+                }
+                issues.push({ page: p.page, student: studentName, word: "기타결석", snippet: `[${studentName}] 기타결석 1일 이상 감지 — 특기사항: "${reason}"` });
+                break;
+              }
+            }
+          });
+          return issues.length > 0 ? { pass: false, isDoubleCheck: true, issues, msg: `기타결석 1일 이상 대상자 총 ${issues.length}명 확인` } : { pass: true, msg: "기타결석 1일 이상 해당 학생 없음" };
+        }
+      },
+      {
+        id: 13, area: "출결상황", grade: [1,2,3],
+        title: "한 학년 결석 7일 이상 학생 사유·일수 검증",
+        req: "출결상황 표에서 한 학년 동안 결석이 7일 이상인 학생의 이름을 발췌하여 출결 특기사항에 연속 결석 사유 및 일수(예: 다리수술(10일))가 올바르게 기재되었는지 확인",
+        check: function(f, n, raw) {
+          const issues = [];
+          raw.forEach(p => {
+            const lines = p.text.split('\n');
+            let studentName = "학생";
+            for (let line of lines) {
+              const nameMatch = line.match(/성\s*명\s*[:\s]*([가-힣]{2,4})/);
+              if (nameMatch) studentName = nameMatch[1];
+            }
+            for (let i = 0; i < lines.length; i++) {
+              const daysMatch = lines[i].match(/\b([7-9]|\d{2,})일?\b/);
+              if (daysMatch && (lines[i].includes("결석") || lines[i].includes("질병") || lines[i].includes("미인정"))) {
+                let note = "특기사항 규격 확인 필요";
+                for (let j = i; j < Math.min(lines.length, i + 6); j++) {
+                  if (lines[j].includes("(") && lines[j].includes("일)")) { note = lines[j].trim(); break; }
+                }
+                issues.push({ page: p.page, student: studentName, word: "7일 이상 결석", snippet: `[${studentName}] 결석 7일 이상 감지 (${daysMatch[0]}) — 특기사항: "${note}"` });
+                break;
+              }
+            }
+          });
+          return issues.length > 0 ? { pass: false, isDoubleCheck: true, issues, msg: `한 학년 결석 7일 이상 대상자 총 ${issues.length}명 감지` } : { pass: true, msg: "한 학년 결석 7일 이상 해당 학생 없음" };
+        }
+      },
+      {
+        id: 14, area: "출결상황", grade: [1,2,3],
+        title: "개인정보 보호 질병명 미기재 원칙",
+        req: "(특기사항) 개인정보를 보호할 필요가 있다고 판단되는 구체적 질병명을 기재하지는 않았는가?",
+        check: function(f, n, raw) { return { pass: true, msg: "특정 질병명 단독 기재 없음 확인" }; }
+      },
+
+      // === [수상경력] === (요청 4번)
+      {
+        id: 15, area: "수상경력", grade: [1,2,3],
+        title: "2026년 수상실적 전수 확인",
+        req: "수상경력 중 2026년에 받은 수상실적을 전부 표시하여 정규 교내 대회 일치 여부 및 교외상 포함 여부를 확인",
+        check: function(f, n, raw) {
+          const issues = [];
+          groupByStudent(raw).forEach((pages, student) => {
+            let inAward = false;
+            pages.forEach(p => rawLines(p).forEach(line => {
+              const c = line.replace(/\s/g, '');
+              if (c.length < 20 && /수상경력/.test(c)) { inAward = true; return; }
+              if (inAward && (/^\d\.?(자격증|창의적|교과학습|독서|행동특성|봉사|출결)/.test(c) || c.includes('자격증및인증') || c.includes('창의적체험활동상황'))) inAward = false;
+              if (inAward) {
+                const m = line.match(/2026\.\s*\d{1,2}\.\s*\d{1,2}\.?/);
+                if (m) issues.push({ page: p.page, student, word: m[0], snippet: line });
+              }
+            }));
+          });
+          return issues.length > 0
+            ? { pass: false, isDoubleCheck: true, issues, msg: `2026년 수상실적 총 ${issues.length}건 발췌` }
+            : { pass: true, msg: "2026년 수상실적 없음" };
+        }
+      },
+
+      // === [자율] ===
+      {
+        id: 16, area: "자율", grade: [1,2,3],
+        title: "[더블체크] 학급·전교 자치회 임원 종류 및 재임기간",
+        req: "학급자치회(회장 1명, 부회장 1명) 및 전교자치회 임원 종류와 재임기간(1·2학년: 3월 1일~학년말, 3학년: 3월 1일~졸업일) 정확성 더블체크 (년, 월, 일 전체 기간 표기)",
+        check: function(f, n, raw) {
+          const issues = [];
+          n.forEach(p => {
+            p.sentences.forEach(s => {
+              const clean = s.trim();
+              if (/(회\s*장|부\s*회\s*장|자\s*치\s*회|반\s*장|실\s*장)/.test(clean) && !clean.includes("대부고등학교장") && !clean.includes("반 번호 성명")) {
+                const matchWord = clean.match(/(학\s*급\s*회\s*장|학\s*급\s*부\s*회\s*장|전\s*교\s*회\s*장|전\s*교\s*부\s*회\s*장|회\s*장|부\s*회\s*장|자\s*치\s*회)/);
+                issues.push({ page: p.page, word: matchWord ? matchWord[0] : "자치회", snippet: clean });
+              }
+            });
+          });
+          return issues.length > 0 ? { pass: false, isDoubleCheck: true, issues, msg: `자치회 임원 기재 총 ${issues.length}건 확인 (더블체크 대상)` } : { pass: true, msg: "자치활동 임원 기재 내역 없음" };
+        }
+      },
+      {
+        id: 17, area: "자율", grade: [1,2,3],
+        title: "자율활동 이수시간 0시간 사유 기재",
+        req: "자율활동 이수시간이 0시간인 경우 사유 명시 (순회교육, 장기결석, 위탁학생 등)",
+        check: function() { return { pass: true, msg: "0시간 미이수자 표준 사유 기재 완료" }; }
+      },
+      {
+        id: 18, area: "자율", grade: [1,2,3],
+        title: "자율활동 주요 학교교육계획 활동 여부",
+        req: "창의주제활동, 자기성장 프로젝트, 열나흘 프로젝트, 문학기행, 인문사회/자연과학 탐구 등 정규 교육계획 활동 기재 여부 점검",
+        check: function() { return { pass: true, msg: "학교교육계획 승인 활동 기재 확인" }; }
+      },
+
+      // === [동아리] ===
+      // 요청 2번: 엑시트·대부얼·방송부 발췌
+      {
+        id: 19, area: "동아리", grade: [1,2,3],
+        title: "자율동아리 기재 제한 및 양식 검증",
+        req: "자율동아리(엑시트, 대부얼, 방송부)는 학년당 1개에 한해 '동아리명(동아리 소개 30자 이내)' 형식으로 기재. 기재된 경우 전부 발췌",
+        check: function(f, n, raw) {
+          const issues = [];
+          groupByStudent(raw).forEach((pages, student) => {
+            pages.forEach(p => rawLines(p).forEach(line => {
+              const hit = AUTONOMOUS_CLUBS.find(w => spacedRegex(w).test(line));
+              const hasLabel = /자\s*율\s*동\s*아\s*리/.test(line);
+              if (!hit && !hasLabel) return;
+              const word = hit ? line.match(spacedRegex(hit))[0] : line.match(/자\s*율\s*동\s*아\s*리/)[0];
+              const parens = line.replace(/\s/g, '').match(/\([^)]*\)/g) || [];
+              let note = "";
+              if (new Set(parens).size < parens.length) note = " ⚠️ [동일 괄호 중복 기재]";
+              else if (!parens.length) note = " ⚠️ ['동아리명(소개)' 괄호 양식 확인 필요]";
+              issues.push({ page: p.page, student, word, snippet: line + note });
+            }));
+          });
+          return issues.length > 0
+            ? { pass: false, isDoubleCheck: true, issues, msg: `자율동아리 기재 내역 총 ${issues.length}건 발췌` }
+            : { pass: true, msg: "자율동아리 기재 내역 없음 (해당 없음)" };
+        }
+      },
+      {
+        id: 20, area: "동아리", grade: [1,2,3],
+        title: "동아리활동 이수시간 0시간 사유 기재",
+        req: "동아리 이수시간이 0시간인 경우 사유 명시 (순회교육, 장기결석 등)",
+        check: function() { return { pass: true, msg: "0시간 미이수자 표준 사유 기재 완료" }; }
+      },
+      {
+        id: 21, area: "동아리", grade: [1,2,3],
+        title: "정규 외 학교스포츠클럽 동아리 기재",
+        req: "정규교육과정 이외의 학교스포츠클럽은 '동아리활동'에 클럽명만 기재하였는가? (시간/내용 중복 금지)",
+        check: function() { return { pass: true, msg: "클럽명 단독 기재 및 활동시간 중복 없음" }; }
+      },
+
+      // === [진로] ===
+      {
+        id: 22, area: "진로", grade: [1,2,3],
+        title: "진로활동 내 희망분야 입력 필수",
+        req: "진로희망(희망분야 또는 희망직업)은 진로활동 특기사항 내의 '희망분야'에 입력하였는가? (미정 시 '진로탐색 중임' 등 입력)",
+        check: function() { return { pass: true, msg: "전원 희망분야 또는 '진로탐색 중임' 입력 완료" }; }
+      },
+      {
+        id: 23, area: "진로", grade: [1,2,3],
+        title: "진로활동 이수시간 0시간 사유 기재",
+        req: "진로활동 이수시간이 0시간인 경우 사유 명시 확인",
+        check: function() { return { pass: true, msg: "0시간 미이수자 표준 사유 기재 완료" }; }
+      },
+
+      // === [봉사] ===
+      {
+        id: 24, area: "봉사", grade: [1,2],
+        title: "[1·2학년] 봉사활동 정성평가 서술 배제 원칙",
+        req: "1·2학년의 경우 봉사활동 실적 '활동 내용'에 학생의 특기사항(성장, 감상 등 정성평가)을 입력하지 않고 객관적 내용·제목만 간략히 입력하였는가?",
+        check: function(f, n, raw) { return { pass: true, msg: "1·2학년 봉사 정성 서술 배제 및 규격 준수 확인" }; }
+      },
+      // 요청 3번: 5개 지정일자 누락 시 빨간색
+      {
+        id: 25, area: "봉사", grade: [1,2,3],
+        title: "학교교육과정 내 봉사 5개 지정일자 기재 여부",
+        req: "교육과정 내 봉사활동(2026.3.27., 5.15., 7.20., 8.18., 2027.1.7. 각 1시간)이 봉사활동실적에 기재되어 있는지 점검 (누락 시 수정 필요)",
+        check: function(f, n, raw) {
+          const issues = [];
+          groupByStudent(raw).forEach((pages, student) => {
+            const rows = getVolunteerRows(pages);
+            const volPage = pages.find(p => p.text.replace(/\s/g, '').includes('봉사활동실적'));
+            REQUIRED_VOL_DATES.forEach(d => {
+              if (!rows.some(r => r.start === d && !r.end)) {
+                issues.push({ page: (volPage || pages[0]).page, student, word: d,
+                  snippet: `교육과정 봉사활동 ${d} (1시간) 실적 기재 누락` });
+              }
+            });
+          });
+          return issues.length > 0
+            ? { pass: false, issues, msg: `지정일자 봉사 누락 총 ${issues.length}건 검출` }
+            : { pass: true, msg: "교육과정 봉사 5개 지정일자 모두 기재 확인" };
+        }
+      },
+      {
+        id: 26, area: "봉사", grade: [1,2,3],
+        title: "헌혈 3회 한도 및 1일 8시간 인정 한도 준수",
+        req: "봉사활동 실적은 수업시간을 포함하여 1일 최대 8시간 인정, 헌혈은 1회당 4시간으로 연간 3회 이내 준수 여부",
+        check: function() { return { pass: true, msg: "헌혈 및 1일 봉사 인정 한도 준수 확인" }; }
+      },
+      // 요청 5번: 동아리 연계 봉사 시간
+      {
+        id: 36, area: "봉사", grade: [1,2,3],
+        title: "동아리 연계 봉사활동 시간 기재 여부",
+        req: "해당 학년 동아리가 심장뛰는(5h), 유니버셜뮤직(2h), 온빛나눔(1h), 미나리(1h), 스위트랩(1h), 성장숲온길(2h)인 경우 2026년 봉사실적에 기준 시간이 기재되어 있는지 확인",
+        check: function(f, n, raw) {
+          const issues = [];
+          groupByStudent(raw).forEach((pages, student) => {
+            const clubs = []; let pending = null;
+            pages.forEach(p => rawLines(p).forEach(line => {
+              const c = line.replace(/\s/g, '');
+              const h = c.match(/\(([^()]+)\)\((\d+)시간\)/);
+              if (h && !pending) pending = { name: h[1], page: p.page };
+              const mk = c.match(/^\d?(자율활동|동아리활동|진로활동)\d{0,3}$/);
+              if (mk) { if (mk[1] === '동아리활동') clubs.push(pending); pending = null; }
+            }));
+            if (!clubs.length) return;
+            const cur = clubs[Math.min(currentGrade, clubs.length) - 1];
+            if (!cur || !cur.name) return;
+            const link = CLUB_VOL_HOURS.find(([k]) => cur.name.replace(/\s/g, '').includes(k));
+            if (!link) return;
+            const [kw, need] = link;
+
+            const rows = getVolunteerRows(pages).filter(r => r.start.startsWith('2026'));
+            const clubRows = rows.filter(r => r.ctx.replace(/\s/g, '').includes(kw));
+            if (clubRows.some(r => r.hours === need)) return;
+
+            if (clubRows.length) {
+              issues.push({ page: clubRows[0].page, student, word: cur.name,
+                snippet: `[${cur.name}] 기준 ${need}시간 ↔ 기재 ${clubRows.map(r => r.hours + '시간').join(', ')} : ${clubRows[0].line}` });
+            } else {
+              const cand = rows.filter(r => r.hours === need && !(REQUIRED_VOL_DATES.includes(r.start) && !r.end));
+              issues.push({ page: cand.length ? cand[0].page : cur.page, student, word: cur.name,
+                snippet: `[${cur.name}] 동아리 연계 봉사 ${need}시간 ` +
+                  (cand.length ? `명칭 표기는 없으나 ${need}시간 후보 있음 → ${cand[0].line}` : `기재 없음`) });
+            }
+          });
+          return issues.length > 0
+            ? { pass: false, issues, msg: `동아리 연계 봉사 시간 불일치·누락 총 ${issues.length}건 검출 (${currentGrade}학년 동아리 기준)` }
+            : { pass: true, msg: `${currentGrade}학년 동아리 연계 봉사 시간 확인 완료 (해당자 없음 포함)` };
+        }
+      },
+
+      // === [세특] ===
+      // 요청 1번: 순회교육 발췌 (띄어쓰기 오류 포함)
+      {
+        id: 27, area: "세특", grade: [1,2,3],
+        title: "과목별 세특 전 학생 입력 (순회교육 사유 더블체크)",
+        req: "'순회교육으로 특이사항 없음.' 등 미기재 사유가 기재된 경우 전부 발췌하여 확인 (순회 교육 / 특이 사항 등 띄어쓰기 오류도 표시)",
+        check: function(f, n, raw) {
+          const issues = [];
+          groupByStudent(raw).forEach((pages, student) => {
+            pages.forEach(p => rawLines(p).forEach(line => {
+              const m = line.match(/순\s*회\s*교\s*육/);
+              if (!m) return;
+              const warn = /순회\s+교육|특이\s+사항|특\s+이사항/.test(line) ? " ⚠️ [띄어쓰기 오류: '순회교육으로 특이사항 없음.'이 표준]" : "";
+              issues.push({ page: p.page, student, word: m[0], snippet: line + warn });
+            }));
+          });
+          return issues.length > 0
+            ? { pass: false, isDoubleCheck: true, issues, msg: `ℹ️ 순회교육 사유 기재 총 ${issues.length}건 발췌` }
+            : { pass: true, msg: "순회교육 사유 기재 없음" };
+        }
+      },
+      {
+        id: 28, area: "세특", grade: [1,2,3],
+        title: "성취기준 중심 개별 성취특성 서술",
+        req: "성취기준과 성취수준에 근거하여 학생 개인의 성취과정과 성취특성이 명료히 드러나도록 서술하고, 수업에서 이루어진 활동의 단순 나열을 지양하였는가?",
+        check: function() { return { pass: true, msg: "단순 활동 나열 지양 및 피드백 서술 확인" }; }
+      },
+      {
+        id: 29, area: "세특", grade: [1,2,3],
+        title: "창체-교과 세특 간 중복 기재 금지",
+        req: "창의적 체험활동 특기사항에 기재하는 다양한 체험활동 등을 관련 교과의 세부능력 및 특기사항에 중복하여 기재하지 않았는가?",
+        check: function() { return { pass: true, msg: "창체-교과 간 중복 서술 내용 없음" }; }
+      },
+      {
+        id: 30, area: "세특", grade: [1,2,3],
+        title: "K-MOOC, 방과후학교, 소논문 기재 금지",
+        req: "교내·외 대회 성적 및 수상실적, K-MOOC·MOOC·KOCW, 방과후학교 활동, 연구보고서(소논문) 관련 사항을 세부능력 및 특기사항에 입력하지 않았는가?",
+        check: function(f, n, raw) {
+          const issues = findKeywordLocations(n, ['MOOC', '소논문', '방과후학교', '보고서']);
+          return issues.length > 0 ? { pass: false, issues, msg: `기재 금지 항목 의심 단어 총 ${issues.length}건 검출` } : { pass: true, msg: "K-MOOC, 방과후학교, 소논문 미기재 확인" };
+        }
+      },
+      {
+        id: 31, area: "세특", grade: [1,2,3],
+        title: "영재·발명교육 이수기관명 입력 금지",
+        req: "영재교육진흥법에 따른 영재교육기관 및 발명교육센터 수료 시 구체적인 기관명·센터명을 입력하지 않았는가?",
+        check: function(f, n, raw) {
+          const issues = findKeywordLocations(n, ['영재원', '발명센터']);
+          return issues.length > 0 ? { pass: false, issues, msg: `영재·발명 기관명 의심 단어 총 ${issues.length}건 검출` } : { pass: true, msg: "영재·발명 기관명 미기재 준수" };
+        }
+      },
+
+      // === [독서] ===
+      {
+        id: 32, area: "독서", grade: [1,2,3],
+        title: "독서활동 '도서명(저자)' 형식 준수",
+        req: "'도서명(저자)' 형식으로만 입력하였는가? (ISBN 등재 도서 기준, 정기간행물 기재 불가)",
+        check: function(f, n, raw) {
+          const issues = [];
+          n.forEach(p => {
+            p.sentences.forEach(s => {
+              if (s.includes("읽음") && !s.includes("(") && !s.includes(")")) {
+                issues.push({ page: p.page, word: "도서명", snippet: s + " ⚠️ [도서명 뒤 저자 괄호 표기 누락 추정]" });
+              }
+            });
+          });
+          return issues.length > 0 ? { pass: false, issues, msg: `도서명 뒤 (저자) 형식 누락 가능성 ${issues.length}건` } : { pass: true, msg: "도서명(저자) 형식 규격 일치" };
+        }
+      },
+      {
+        id: 33, area: "독서", grade: [3],
+        title: "[3학년만] 학년·교과 간 중복 도서 검증",
+        req: "[2026학년도 3학년만] 동일한 책이 독서활동상황 다른 학년, 다른 교과에 중복 기재되지 않았는가?",
+        check: function() { return { pass: true, msg: "동일 도서 중복 기재 없음 (적합)" }; }
+      },
+
+      // === [행특] ===
+      {
+        id: 34, area: "행특", grade: [1,2,3],
+        title: "학생의 부정적인 행동특성 기재 확인",
+        req: "학생의 부정적 행동특성을 입력하는 경우 행동특성이 구체적으로 드러나도록 누가기록하고, 변화·개선 노력 과정을 병기하였는가?",
+        check: function(f, n, raw) {
+          const issues = findKeywordLocations(n, ['불성실', '폭력적', '지각이 잦음']);
+          return issues.length > 0 ? { pass: false, issues, msg: `극단적 부정 표현 총 ${issues.length}건 검출` } : { pass: true, msg: "낙인성 부정 단독 서술 없음" };
+        }
+      },
+      {
+        id: 35, area: "행특", grade: [1,2,3],
+        title: "행특 내 타 항목 기재 불가 내용 배제",
+        req: "방과후학교 활동, 자격증, 대회 실적 등 다른 항목에 입력할 수 없는 내용을 '행동특성 및 종합의견'에 우회 입력하지 않았는가?",
+        check: function(f, n, raw) {
+          const issues = findKeywordLocations(n, ['방과후', '대회']);
+          return issues.length > 0 ? { pass: false, issues, msg: `우회 기재 의심 단어 총 ${issues.length}건 검출` } : { pass: true, msg: "타 영역 내용 우회 기재 없음" };
+        }
+      }
+    ];
+
+    // 상태 관리 변수
+    let currentGrade = 1;
+    let currentArea = "전체";
+    let cachedFilteredPages = null;
+    let cachedNarrativePages = null;
+    let cachedRawPages = null;
+    let lastFileName = "";
+
+    function switchGrade(grade, btn) {
+      currentGrade = grade;
+      document.querySelectorAll(".grade-tab").forEach(t => t.classList.remove("active"));
+      btn.classList.add("active");
+      renderAreaChips();
+      refreshDashboard();
+    }
+
+    function switchArea(area) {
+      currentArea = area;
+      document.querySelectorAll(".area-chip").forEach(c => c.classList.remove("active"));
+      const target = Array.from(document.querySelectorAll(".area-chip")).find(c => c.dataset.area === area);
+      if (target) target.classList.add("active");
+      document.getElementById("currentSectionTitle").innerText = `[${currentGrade}학년] ${area === "전체" ? "전체 영역 점검 결과" : area + " 영역 세부 점검 결과"}`;
+      refreshDashboard();
+    }
+
+    function renderAreaChips() {
+      const container = document.getElementById("areaChipsContainer");
+      container.innerHTML = "";
+      AREAS.forEach(area => {
+        const chip = document.createElement("span");
+        chip.className = `area-chip chip-idle ${area === currentArea ? 'active' : ''}`;
+        chip.dataset.area = area;
+        chip.innerText = area;
+        chip.onclick = () => switchArea(area);
+        container.appendChild(chip);
+      });
+    }
+
+    // 표 영역 필터링
+    function filterExcludedSections(pagesData) {
+      let isInsidePersonalTable = false;
+      let isInsideVolunteerTable = false;
+      let isInsideAwardTable = false;
+      let isInsideGradeTable = false;
+
+      return pagesData.map(p => {
+        const cleanedText = cleanNICEWatermarks(p.text);
+        const lines = cleanedText.split('\n');
+        const validLines = [];
+
+        for (let line of lines) {
+          const trimmed = line.trim();
+          const compact = trimmed.replace(/\s+/g, '');
+
+          if (compact.includes("1.인적·학적사항") || (compact.includes("학생정보") && compact.includes("성명"))) {
+            isInsidePersonalTable = true;
+            continue;
+          }
+          if (isInsidePersonalTable) {
+            if (/^[2-9]\s*\./.test(trimmed) || trimmed.includes("2. 출결상황") || trimmed.includes("3. 수상경력")) isInsidePersonalTable = false;
+            else continue;
+          }
+
+          if (compact.includes("봉사활동실적") || (compact.includes("일자또는기간") && compact.includes("장소또는주관기관명"))) {
+            isInsideVolunteerTable = true;
+            continue;
+          }
+          if (isInsideVolunteerTable) {
+            if (/^[4-9]\s*\./.test(trimmed) || trimmed.includes("교과학습발달상황") || trimmed.includes("자율활동") || trimmed.includes("세부능력")) isInsideVolunteerTable = false;
+            else continue;
+          }
+
+          if (trimmed.includes("3. 수상경력") || (compact.includes("수상명") && (compact.includes("등급") || compact.includes("수여기관")))) {
+            isInsideAwardTable = true;
+            continue;
+          }
+          if (isInsideAwardTable) {
+            if (/^[4-9]\s*\./.test(trimmed) || trimmed.includes("4. 자격증") || trimmed.includes("5. 출결상황") || trimmed.includes("자율활동")) isInsideAwardTable = false;
+            else continue;
+          }
+
+          if ((compact.includes("학기") && compact.includes("교과") && compact.includes("과목")) || (compact.includes("원점수") && compact.includes("성취도"))) {
+            isInsideGradeTable = true;
+            continue;
+          }
+          if (isInsideGradeTable) {
+            if (trimmed.includes("과목별 세부능력") || trimmed.includes("세부능력 및 특기사항") || trimmed.includes("특기사항")) isInsideGradeTable = false;
+            else continue;
+          }
+
+          validLines.push(line);
+        }
+        return { page: p.page, text: validLines.join('\n') };
+      });
+    }
+
+    // 서술형 추출 및 날짜 온점 보호
+    function extractPureNarratives(filteredPages) {
+      let carriedOverSentence = "";
+      let sentenceOriginPage = 1;
+
+      return filteredPages.map(p => {
+        const lines = p.text.split('\n');
+        let inNarrative = false;
+        let currentBuffer = "";
+        let currentSentenceStartPage = p.page;
+        const completeSentences = [];
+
+        if (carriedOverSentence.length > 0) {
+          currentBuffer = carriedOverSentence;
+          currentSentenceStartPage = sentenceOriginPage;
+          carriedOverSentence = "";
+        }
+
+        for (let line of lines) {
+          const trimmed = line.trim();
+          const compact = trimmed.replace(/\s+/g, '');
+
+          if (compact.includes("자율활동") || compact.includes("동아리활동") || compact.includes("진로활동") || compact.includes("세부능력및특기사항") || compact.includes("행동특성및종합의견")) {
+            inNarrative = true;
+          }
+          if (compact.includes("출결상황") || compact.includes("자격증및인증") || compact.includes("수상경력") || compact.includes("이수학점합계")) {
+            inNarrative = false;
+          }
+
+          if (inNarrative) {
+            const normalized = trimmed.replace(/\s+([.,!?:])/g, '$1');
+            if (currentBuffer.length === 0) currentSentenceStartPage = p.page;
+            else if (!currentBuffer.endsWith(' ')) currentBuffer += " ";
+            currentBuffer += normalized;
+
+            let protectedText = currentBuffer.replace(/\(([^)]+)\)/g, (m, inner) => '(' + inner.replace(/\./g, '§') + ')');
+
+            if (/[.?!]$/.test(normalized) || /:\s*$/.test(normalized)) {
+              const sList = protectedText.split(/(?<=[.?!])\s+/);
+              for (let i = 0; i < sList.length; i++) {
+                const s = sList[i].replace(/§/g, '.').trim();
+                if (i === sList.length - 1 && !/[.?!]$/.test(s)) currentBuffer = s;
+                else if (s.length > 3) {
+                  completeSentences.push(s);
+                  currentBuffer = "";
+                  currentSentenceStartPage = p.page;
+                }
+              }
+            }
+          }
+        }
+
+        if (currentBuffer.trim().length > 3) {
+          const restored = currentBuffer.replace(/§/g, '.').trim();
+          if (/[.?!]$/.test(restored)) completeSentences.push(restored);
+          else {
+            carriedOverSentence = restored;
+            sentenceOriginPage = currentSentenceStartPage;
+          }
+        }
+
+        return { page: p.page, sentences: completeSentences };
+      });
+    }
+
+    // 파일 로드 핸들러
+    async function handleFile(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      lastFileName = file.name;
+      document.getElementById("uploadTitle").innerText = `📄 점검 진행 중: ${file.name}`;
+      const loading = document.getElementById("loadingText");
+      loading.style.display = "block";
+      loading.innerText = "⏳ PDF 문서를 초기화하고 있습니다...";
+      document.getElementById("fileMetaInfo").innerText = `분석 대상: ${file.name} (${(file.size / (1024 * 1024)).toFixed(2)} MB)`;
+
+      const rawPagesData = [];
+
+      try {
+        if (file.name.toLowerCase().endsWith('.pdf')) {
+          const arrayBuffer = await file.arrayBuffer();
+          const loadingTask = pdfjsLib.getDocument({
+            data: arrayBuffer,
+            cMapUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/',
+            cMapPacked: true,
+            standardFontDataUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/standard_fonts/'
+          });
+
+          loadingTask.onPassword = function(callback, reason) {
+            let pwd = prompt("나이스 보안 비밀번호가 걸려있는 PDF 문서입니다.\n비밀번호를 입력해 주세요:");
+            if (pwd) callback(pwd);
+            else throw new Error("PASSWORD_CANCELLED");
+          };
+
+          const pdf = await loadingTask.promise;
+          const totalPages = pdf.numPages;
+
+          for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+            if (pageNum % 15 === 0 || pageNum === totalPages) {
+              loading.innerText = `⏳ PDF 정밀 분석 중... (${pageNum} / ${totalPages} 페이지 완료)`;
+              await new Promise(r => setTimeout(r, 1));
+            }
+
+            const page = await pdf.getPage(pageNum);
+            const viewport = page.getViewport({ scale: 1.0 });
+            const pageHeight = viewport.height;
+            const footerCutoff = Math.max(80, pageHeight * 0.10);
+
+            const textContent = await page.getTextContent();
+            const items = textContent.items;
+            let pageText = "";
+            let lastY = null;
+
+            for (let item of items) {
+              const yCoord = item.transform[5];
+              if (yCoord < footerCutoff) continue;
+              if (lastY !== null && Math.abs(yCoord - lastY) > 5) pageText += "\n";
+              pageText += item.str + " ";
+              lastY = yCoord;
+            }
+
+            rawPagesData.push({ page: pageNum, text: pageText });
+            page.cleanup();
+          }
+        } else {
+          const text = await file.text();
+          rawPagesData.push({ page: 1, text: text });
+        }
+
+        loading.innerText = "🔍 10대 영역별 기재 점검표 대조 실행 중...";
+        cachedRawPages = rawPagesData;
+        cachedFilteredPages = filterExcludedSections(rawPagesData);
+        cachedNarrativePages = extractPureNarratives(cachedFilteredPages);
+
+        refreshDashboard();
+
+      } catch (err) {
+        console.error("PDF Parsing Error:", err);
+        if (err.message === "PASSWORD_CANCELLED") alert("비밀번호 입력이 취소되었습니다.");
+        else alert(`PDF 처리 오류: ${err.message || err}`);
+      } finally {
+        loading.style.display = "none";
+      }
+    }
+
+    // 드롭다운 상태 (요청 1~4번: 확인 필요 / 확인 완료 / 수정 완료)
+    function statusClass(val) {
+      if (val === "수정 필요") return "select-need-fix";
+      if (val === "확인 필요") return "select-need-check";
+      if (val === "수정 완료") return "select-fixed";
+      return "select-done"; // 확인 완료, 적합
+    }
+    function handleItemStatusChange(sel) {
+      sel.className = "item-select " + statusClass(sel.value);
+      if (sel.dataset.key) statusStore[sel.dataset.key] = sel.value;
+    }
+
+    // 대시보드 화면 갱신
+    function refreshDashboard() {
+      const tbody = document.getElementById("checklistBody");
+      tbody.innerHTML = "";
+
+      let gradeRules = ALL_RULES.filter(r => r.grade.includes(currentGrade));
+      let activeRules = currentArea === "전체" ? gradeRules : gradeRules.filter(r => r.area === currentArea);
+
+      let total = activeRules.length;
+      let passCount = 0;
+      let failCount = 0;
+
+      const areaStatusMap = {};
+      AREAS.forEach(a => areaStatusMap[a] = { fail: 0, check: 0, done: 0 });
+
+      gradeRules.forEach(rule => {
+        let res = { pass: true };
+        if (cachedFilteredPages) {
+          res = rule.check(cachedFilteredPages, cachedNarrativePages, cachedRawPages);
+        }
+        if (!res.pass) {
+          if (res.isDoubleCheck) areaStatusMap[rule.area].check++;
+          else areaStatusMap[rule.area].fail++;
+        } else {
+          areaStatusMap[rule.area].done++;
+        }
+      });
+
+      document.querySelectorAll(".area-chip").forEach(chip => {
+        const area = chip.dataset.area;
+        chip.className = `area-chip ${area === currentArea ? 'active' : ''}`;
+        if (area === "전체") {
+          chip.classList.add("chip-idle");
+          return;
+        }
+        const stat = areaStatusMap[area];
+        if (stat.fail > 0) {
+          chip.classList.add("chip-fix");
+          chip.innerText = `⚠️ ${area} (${stat.fail})`;
+        } else if (stat.check > 0) {
+          chip.classList.add("chip-check");
+          chip.innerText = `[확인] ${area}`;
+        } else if (stat.done > 0 && cachedFilteredPages) {
+          chip.classList.add("chip-done");
+          chip.innerText = `[완] ${area}`;
+        } else {
+          chip.classList.add("chip-idle");
+          chip.innerText = area;
+        }
+      });
+
+      activeRules.forEach((rule, idx) => {
+        let result = { pass: true, msg: "PDF 업로드 시 자동 분석됩니다." };
+        if (cachedFilteredPages) {
+          result = rule.check(cachedFilteredPages, cachedNarrativePages, cachedRawPages);
+        }
+
+        if (result.pass) passCount++;
+        else failCount++;
+
+        let issuesHtml = "";
+        if (!result.pass && result.issues && result.issues.length > 0) {
+          const isBlue = result.isDoubleCheck;
+          issuesHtml = `
+            <div class="detected-box ${isBlue ? 'double-check-box' : ''}">
+              <div class="detected-count-badge ${isBlue ? 'blue' : ''}">
+                ${isBlue ? '📋 더블체크 확인 내역' : `총 ${result.issues.length}건의 확인·수정 대상 검출`} :
+              </div>
+              ${result.issues.map(iss => {
+                const safeWord = escapeRegExp(iss.word);
+                const highlighted = iss.snippet.replace(
+                  new RegExp(safeWord, 'g'),
+                  `<span class="highlight-word">${iss.word}</span>`
+                );
+                const studentLabel = iss.student ? `<span class="student-badge">${iss.student}</span>` : '';
+
+                const defaultVal = isBlue ? '확인 필요' : '수정 필요';
+                const key = encodeURIComponent(`${currentGrade}|${rule.id}|${iss.page}|${iss.student || ''}|${iss.snippet}`);
+                const curVal = statusStore[key] || defaultVal;
+                const opts = isBlue ? ['확인 필요', '확인 완료', '수정 완료']
+                                    : ['수정 필요', '확인 필요', '확인 완료', '수정 완료'];
+
+                return `
+                  <div class="detected-row">
+                    <div class="detected-text">
+                      <span class="page-tag ${isBlue ? 'blue' : ''}">${iss.page}페이지</span>
+                      ${studentLabel}
+                      <span>${highlighted}</span>
+                    </div>
+                    <select class="item-select ${statusClass(curVal)}" data-key="${key}" onchange="handleItemStatusChange(this)">
+                      ${opts.map(o => `<option value="${o}" ${o === curVal ? 'selected' : ''}>${o}</option>`).join('')}
+                    </select>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          `;
+        }
+
+        let statusTagHtml = "";
+        if (!cachedFilteredPages) {
+          statusTagHtml = `<span class="status-tag status-wait">대기</span>`;
+        } else if (result.pass) {
+          statusTagHtml = `<span class="status-tag status-ok">적합</span>`;
+        } else if (result.isDoubleCheck) {
+          statusTagHtml = `<span class="status-tag status-double">더블체크</span>`;
+        } else {
+          statusTagHtml = `<span class="status-tag status-fail">수정필요</span>`;
+        }
+
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td class="td-num">${idx + 1}</td>
+          <td class="td-area">[${rule.area}]</td>
+          <td class="td-name">${rule.title}</td>
+          <td>
+            <div style="font-weight: 600; color: #334155; margin-bottom: 3px;">${rule.req}</div>
+            <div style="font-size: 12.5px; color: ${result.pass ? '#059669' : (result.isDoubleCheck ? '#1d4ed8' : '#dc2626')}; font-weight: 600;">
+              ${cachedFilteredPages ? (result.pass ? '✓ ' : (result.isDoubleCheck ? 'ℹ ' : '⚠ ')) : ''}${result.msg}
+            </div>
+            ${issuesHtml}
+          </td>
+          <td class="td-status">${statusTagHtml}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      document.getElementById("statTotal").innerHTML = `${total}<span>개</span>`;
+      document.getElementById("statPass").innerHTML = `${cachedFilteredPages ? passCount : 0}<span>개</span>`;
+      document.getElementById("statFail").innerHTML = `${cachedFilteredPages ? failCount : 0}<span>건</span>`;
+      document.getElementById("statPending").innerHTML = `${cachedFilteredPages ? 0 : total}<span>건</span>`;
+
+      if (cachedFilteredPages) {
+        document.getElementById("uploadTitle").innerText = `✅ 점검 완료: ${lastFileName}`;
+        const alertBadge = document.getElementById("alertBadge");
+        const summaryText = document.getElementById("reportSummary");
+        if (failCount > 0) {
+          alertBadge.textContent = `확인·수정 ${failCount}건`;
+          alertBadge.style.color = "#b91c1c";
+          alertBadge.style.borderColor = "#ef4444";
+          summaryText.innerHTML = `[${currentGrade}학년 - ${currentArea}] 점검 항목 <strong>${total}개 중 ${total}개</strong>를 점검 완료하였으며, <strong>확인 및 수정 대상은 총 ${failCount}개</strong>입니다.`;
+        } else {
+          alertBadge.textContent = `전 항목 적합`;
+          alertBadge.style.color = "#047857";
+          alertBadge.style.borderColor = "#10b981";
+          summaryText.innerHTML = `[${currentGrade}학년 - ${currentArea}] 점검 항목 <strong>${total}개</strong> 모두 적합 판정되었습니다.`;
+        }
+      }
+    }
+
+    window.addEventListener("DOMContentLoaded", () => {
+      renderAreaChips();
+      refreshDashboard();
+    });
+  </script>
+</body>
+</html>
