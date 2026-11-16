@@ -216,17 +216,18 @@
     }
 
     // =========================================================
-    // 나이스 워터마크 정제 및 학생·영역·이수시간 통합 파싱 엔진
+    // 나이스 워터마크 정제 (본문 오삭제 방지 수정 완료)
     // =========================================================
-    const NAME_STOP = ['생년월일','주민등록','성별','학생정보','반번호','학교','담임','특기사항','이수시간','학년','영역','과목','번호','성명','순회','교육'];
+    const NAME_STOP = ['생년월일','주민등록','성별','학생정보','반번호','학교','담임','특기사항','이수시간','학년','영역','과목','번호','성명','순회','교육','자치회','학급','전교'];
 
     function cleanNICEWatermarks(text) {
       if (!text) return "";
       return text
-        .replace(/[대\s*부\s*고\s*등\s*학\s*교]*\s*\/\s*\d{4}\.\d{1,2}\.\d{1,2}[^/\n]*\/[\d.*]+\/[가-힣\w\s]+/g, ' ')
-        .replace(/[대\s*부\s*고\s*등\s*학\s*교]*\s*\d{4}년\s*\d{1,2}월\s*\d{1,2}일\s*\d+\s*\/\s*\d+\s*반\s*\d+\s*번\s*호\s*\d+\s*성\s*명\s*[가-힣a-zA-Z\s]+/g, ' ')
+        // 반드시 '대부고등학교'와 '10.131.'(나이스 IP 대역) 또는 출력일시가 함께 있는 워터마크 헤더만 정확히 제거
+        .replace(/대\s*부\s*고\s*등\s*학\s*교\s*\/\s*\d{4}\.\d{1,2}\.\d{1,2}[^\n]*\/[\d.*]+\/[가-힣\w\s]+/g, ' ')
+        .replace(/대\s*부\s*고\s*등\s*학\s*교\s*\d{4}년\s*\d{1,2}월\s*\d{1,2}일[^\n]*/g, ' ')
         .replace(/반\s*\d+\s*번\s*호\s*\d+\s*성\s*명\s*[가-힣a-zA-Z\s]+/g, ' ')
-        .replace(/[\d.*]{5,}\/[가-힣]+/g, ' ');
+        .replace(/10\.131\.[\d.*]+\/[가-힣]+/g, ' ');
     }
 
     function rawLines(p) {
@@ -1008,32 +1009,27 @@
         req: "학급자치회(회장 1명, 부회장 1명) 및 전교자치회 임원 종류와 재임기간(1·2학년: 3월 1일~학년말, 3학년: 3월 1일~졸업일) 정확성 더블체크 (년, 월, 일 전체 기간 표기)",
         check: function(f, n, raw) {
           const issues = [];
-          const seenKeys = new Set();
 
-          // PDF 글자 사이 공백("학 급 자 치 회", "전 교 자 치 회" 등)까지 허용하는 정규식
-          const officerPattern = /(학\s*급\s*자\s*치\s*회|전\s*교\s*자\s*치\s*회|학\s*생\s*자\s*치\s*회|자\s*치\s*회\s*임\s*원|학\s*급\s*임\s*원|학\s*생\s*회\s*임\s*원|학\s*급\s*회\s*장|학\s*급\s*부\s*회\s*장|전\s*교\s*회\s*장|전\s*교\s*부\s*회\s*장|(?:회\s*장|부\s*회\s*장|부\s*장|차\s*장)\s*\(\s*\d{4}\s*\.)/;
+          // 공백 유무와 무관하게 자치회/임원 직책을 포착하는 패턴
+          const officerRegex = /(학\s*급\s*자\s*치\s*회|전\s*교\s*자\s*치\s*회|학\s*생\s*자\s*치\s*회|자\s*치\s*회\s*임\s*원|학\s*급\s*임\s*원|학\s*생\s*회\s*임\s*원|학\s*급\s*회\s*장|학\s*급\s*부\s*회\s*장|전\s*교\s*회\s*장|전\s*교\s*부\s*회\s*장|(?:회\s*장|부\s*회\s*장|부\s*장|차\s*장)\s*\(\s*\d{4}\s*\.)/;
 
-          // 1단계: 분리된 문장(sentenceItems) 전체에서 탐색 (영역 오분류로 누락되지 않도록 전체 검색)
+          // 1) sentenceItems 전체 검색
           n.forEach(p => {
             p.sentenceItems.forEach(item => {
               const clean = item.text.trim();
-              const m = clean.match(officerPattern);
+              const m = clean.match(officerRegex);
               if (m) {
-                const dedupKey = `${item.page}_${item.student}_${clean.slice(0, 25)}`;
-                if (!seenKeys.has(dedupKey)) {
-                  seenKeys.add(dedupKey);
-                  issues.push({
-                    page: item.page,
-                    student: item.student,
-                    word: m[0],
-                    snippet: clean
-                  });
-                }
+                issues.push({
+                  page: item.page,
+                  student: item.student,
+                  word: m[0],
+                  snippet: clean
+                });
               }
             });
           });
 
-          // 2단계: 문장 끝 온점 누락·줄바꿈 등으로 sentenceItems에서 합쳐지거나 누락된 행을 rawPages 줄 단위로 한 번 더 스캔
+          // 2) 원본 페이지 텍스트(rawPages)에서 줄 단위 직접 스캔 (앞뒤 줄 결합으로 잘림 방지)
           raw.forEach(p => {
             const lines = rawLines(p);
             let curStudent = "이름 미확인";
@@ -1042,33 +1038,32 @@
               curStudent = topNameMatch[1];
             }
 
-            lines.forEach((line, idx) => {
+            for (let i = 0; i < lines.length; i++) {
+              const line = lines[i];
               const rowStMatch = line.match(/^(\d{1,2})\s+([가-힣]{2,4})(?:\s+[1-3])?(?:\s|$)/);
               if (rowStMatch && !NAME_STOP.includes(rowStMatch[2])) {
                 curStudent = rowStMatch[2];
               }
 
-              const m = line.match(officerPattern);
+              const m = line.match(officerRegex);
               if (m) {
-                // 앞뒤 1줄을 이어 붙여 온전한 문장 형태로 발췌
-                const mergedContext = [lines[idx], lines[idx + 1]]
+                const combined = [lines[i], lines[i + 1]]
                   .filter(Boolean)
                   .join(' ')
                   .replace(/^\d{1,2}\s+[가-힣]{2,4}\s+[1-3]\s+(?:자율활동|동아리활동|진로활동)\s+\d{1,3}\s*/, '')
                   .trim();
 
-                // 이미 1단계에서 동일 페이지·학생·키워드 문장이 잡혔으면 중복 추가 방지
-                const alreadyCaught = issues.some(iss => iss.page === p.page && iss.student === curStudent && iss.snippet.includes(m[0]));
-                if (!alreadyCaught) {
+                const isDup = issues.some(iss => iss.page === p.page && iss.snippet.replace(/\s/g,'').includes(m[0].replace(/\s/g,'')));
+                if (!isDup) {
                   issues.push({
                     page: p.page,
                     student: curStudent,
                     word: m[0],
-                    snippet: mergedContext
+                    snippet: combined
                   });
                 }
               }
-            });
+            }
           });
 
           return issues.length > 0
@@ -1290,6 +1285,11 @@
           }
         }
 
+        const totalExtractedChars = rawPages.reduce((sum, p) => sum + p.text.replace(/\s/g, '').length, 0);
+        if (totalExtractedChars < 30) {
+          alert("⚠️ 업로드하신 PDF에서 텍스트가 추출되지 않았습니다.\n스캔(이미지)으로 저장된 PDF 파일일 가능성이 높습니다. 나이스에서 'PDF로 저장'한 원본 디지털 PDF 파일을 업로드해 주세요.");
+        }
+
         const { parsedPages, detectedAreas, studentCount } = detectPageAndLineAreas(rawPages);
         const activityHourRecords = extractAllActivityHourRecords(rawPages);
 
@@ -1303,10 +1303,10 @@
           studentCount
         };
 
-        const areaLabel = detectedAreas.length > 0 ? detectedAreas.join(', ') : '전체/일반 서식';
+        const areaLabel = detectedAreas.length > 0 ? detectedAreas.join(', ') : (totalExtractedChars < 30 ? '텍스트 미추출(스캔본 의심)' : '전체/일반 서식');
         const hourCountInfo = activityHourRecords.length > 0 ? ` · 이수시간 표 ${activityHourRecords.length}건 추출` : '';
         document.getElementById('fileMetaInfo').textContent =
-          `파일명: ${file.name} (총 ${rawPages.length}페이지 · 학생 ${studentCount}명 인식 · 감지된 영역: ${areaLabel}${hourCountInfo})`;
+          `파일명: ${file.name} (총 ${rawPages.length}페이지 · 추출 글자수 ${totalExtractedChars}자 · 학생 ${studentCount}명 인식 · 감지된 영역: ${areaLabel}${hourCountInfo})`;
         document.getElementById('detectedDocBadge').textContent =
           `📂 자동 인식된 영역: ${areaLabel}`;
         document.getElementById('uploadTitle').textContent =
