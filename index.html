@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>2026학년도 2학기 학교생활기록부 점검 시스템</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   </script>
@@ -46,7 +47,9 @@
     .upload-icon { font-size: 32px; margin-bottom: 6px; }
     .upload-title { font-size: 16px; font-weight: 700; color: var(--primary-dark); }
     .upload-desc { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
-    .status-analyzing { display: none; color: #2563eb; font-weight: 700; margin-top: 8px; }
+    .status-analyzing { display: none; color: #2563eb; font-weight: 700; margin-top: 10px; font-size: 13.5px; }
+    .ocr-progress-wrap { display: none; max-width: 460px; margin: 10px auto 0; background: #e2e8f0; border-radius: 999px; height: 8px; overflow: hidden; }
+    .ocr-progress-bar { width: 0%; height: 100%; background: linear-gradient(90deg, #2563eb, #059669); transition: width 0.25s ease; }
     .alert-banner { background: #fffbeb; border: 1px solid #fcd34d; border-radius: 12px; padding: 16px 20px; display: flex; gap: 14px; align-items: flex-start; }
     .alert-title { font-size: 14px; font-weight: 700; color: #92400e; display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
     .alert-badge { background: white; border: 1px solid #f59e0b; color: #b45309; padding: 1px 8px; border-radius: 9999px; font-size: 11.5px; }
@@ -103,7 +106,7 @@
 
   <header class="navbar">
     <div class="logo">
-      <span>📑</span> 2026 대부고 학생부 기재 점검 시스템 <span class="badge-status-feature">학년별·영역별 자동 분류 검토</span>
+      <span>📑</span> 2026 대부고 학생부 기재 점검 시스템 <span class="badge-status-feature">디지털 PDF · 스캔본(OCR) 자동 인식</span>
     </div>
   </header>
 
@@ -113,7 +116,7 @@
       <div class="badge-pill">2026학년도 2학기 · 학교생활기록부 점검표</div>
       <h2>2026학년도 2학기 학교생활기록부 점검 대시보드</h2>
       <div class="header-meta" id="fileMetaInfo">
-        대부고등학교 · 2026학년도 2학기 나이스 기재요령 점검표 기준 전수 검사 대기 중
+        대부고등학교 · 2026학년도 2학기 나이스 기재요령 점검표 기준 전수 검사 대기 중 (스캔 PDF·이미지 OCR 지원)
       </div>
     </div>
 
@@ -124,17 +127,20 @@
           <button class="grade-tab" onclick="switchGrade(2, this)">2학년</button>
           <button class="grade-tab" onclick="switchGrade(3, this)">3학년</button>
         </div>
-        <div class="detected-doc-tag" id="detectedDocBadge">📂 파일 업로드 시 문서 유형(전체 생기부 / 영역별·교과별 출력물) 자동 판별</div>
+        <div class="detected-doc-tag" id="detectedDocBadge">📂 파일 업로드 시 문서 유형(디지털 PDF / 스캔본 OCR / 영역) 자동 판별</div>
       </div>
       <div class="area-chips" id="areaChipsContainer"></div>
     </section>
 
     <div class="upload-zone" onclick="document.getElementById('pdfInput').click()">
-      <input type="file" id="pdfInput" accept=".pdf, .txt" onchange="handleFile(event)">
+      <input type="file" id="pdfInput" accept=".pdf, .txt, .png, .jpg, .jpeg" onchange="handleFile(event)">
       <div class="upload-icon">📄</div>
-      <div class="upload-title" id="uploadTitle">생활기록부 PDF 파일을 업로드하세요</div>
-      <div class="upload-desc" id="uploadDesc">클릭하거나 PDF 파일을 이곳에 끌어다 놓으세요. (전체 생활기록부 및 영역별·교과세특 출력물 자동 구분)</div>
-      <div class="status-analyzing" id="loadingText">⏳ PDF 페이지별 영역, 학생명, 이수시간, 텍스트를 정밀 분석하고 있습니다...</div>
+      <div class="upload-title" id="uploadTitle">생활기록부 PDF 또는 스캔 파일을 업로드하세요</div>
+      <div class="upload-desc" id="uploadDesc">디지털 PDF는 물론 스캔한 PDF·이미지(.png, .jpg)도 자동으로 문자를 판독(OCR)하여 점검합니다.</div>
+      <div class="status-analyzing" id="loadingText">⏳ 문서를 분석하고 있습니다...</div>
+      <div class="ocr-progress-wrap" id="ocrProgressWrap">
+        <div class="ocr-progress-bar" id="ocrProgressBar"></div>
+      </div>
     </div>
 
     <div class="alert-banner">
@@ -178,19 +184,11 @@
   </main>
 
   <script>
-    // =========================================================
-    // 전역 상태 및 사용자 입력 기준값 저장소
-    // =========================================================
     let currentGrade = 1;
     let currentArea = "전체";
     let uploadedData = null;
 
-    const userTargetHours = {
-      '자율': '',
-      '동아리': '',
-      '진로': ''
-    };
-
+    const userTargetHours = { '자율': '', '동아리': '', '진로': '' };
     const statusStore = {};
 
     function escapeRegExp(string) {
@@ -216,22 +214,79 @@
     }
 
     // =========================================================
-    // 나이스 워터마크 정제 (본문 오삭제 방지 수정 완료)
+    // 스캔 이미지 전처리 및 OCR 텍스트 정규화 엔진
     // =========================================================
-    const NAME_STOP = ['생년월일','주민등록','성별','학생정보','반번호','학교','담임','특기사항','이수시간','학년','영역','과목','번호','성명','순회','교육','자치회','학급','전교'];
+    function preprocessCanvasForOCR(canvas) {
+      const ctx = canvas.getContext('2d');
+      const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const d = imgData.data;
+      const contrast = 1.45;
+      const intercept = 128 * (1 - contrast);
+      for (let i = 0; i < d.length; i += 4) {
+        const gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+        let val = gray * contrast + intercept;
+        val = val < 0 ? 0 : (val > 255 ? 255 : val);
+        d[i] = d[i + 1] = d[i + 2] = val;
+      }
+      ctx.putImageData(imgData, 0, 0);
+      return canvas;
+    }
+
+    function normalizeOCRText(rawOcrText) {
+      if (!rawOcrText) return "";
+      return rawOcrText
+        .replace(/[|¦丨┃]/g, ' ')
+        .replace(/([가-힣])\s+(?=[가-힣](?:\s+[가-힣]){1,})/g, '$1')
+        .replace(/자\s*율\s*활\s*동/g, '자율활동')
+        .replace(/동\s*아\s*리\s*활\s*동/g, '동아리활동')
+        .replace(/진\s*로\s*활\s*동/g, '진로활동')
+        .replace(/봉\s*사\s*활\s*동/g, '봉사활동')
+        .replace(/학\s*급\s*자\s*치\s*[회희]/g, '학급자치회')
+        .replace(/전\s*교\s*자\s*치\s*[회희]/g, '전교자치회')
+        .replace(/자\s*치\s*[회희]/g, '자치회')
+        .replace(/순\s*회\s*교\s*육/g, '순회교육')
+        .replace(/특\s*이\s*사\s*항/g, '특이사항')
+        .replace(/창\s*의\s*적\s*체\s*험\s*활\s*동/g, '창의적체험활동')
+        .replace(/세\s*부\s*능\s*력\s*및\s*특\s*기\s*사\s*항/g, '세부능력및특기사항')
+        .replace(/행\s*동\s*특\s*성\s*및\s*종\s*합\s*의\s*견/g, '행동특성및종합의견')
+        .replace(/(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})\./g, '$1.$2.$3.')
+        .replace(/[ \t]{2,}/g, ' ');
+    }
+
+    // =========================================================
+    // [수정 1 & 4] 나이스 상·하단 워터마크, 학교명 직인, 표 헤더 완전 분리 정제
+    // =========================================================
+    const NAME_STOP = ['생년월일','주민등록','성별','학생정보','반번호','학교','담임','특기사항','이수시간','학년','영역','과목','번호','성명','순회','교육','자치회','학급','전교','사용자명'];
 
     function cleanNICEWatermarks(text) {
       if (!text) return "";
       return text
-        // 반드시 '대부고등학교'와 '10.131.'(나이스 IP 대역) 또는 출력일시가 함께 있는 워터마크 헤더만 정확히 제거
-        .replace(/대\s*부\s*고\s*등\s*학\s*교\s*\/\s*\d{4}\.\d{1,2}\.\d{1,2}[^\n]*\/[\d.*]+\/[가-힣\w\s]+/g, ' ')
+        // 1) 상·하단 출력 워터마크 줄 제거 (예: 대부고등학교/2026.11.16 15:45/10.131.***.121/박수빈)
+        .replace(/대\s*부\s*고\s*등\s*학\s*교\s*\/\s*\d{4}\.\d{1,2}\.\d{1,2}[^\n]*/g, ' ')
         .replace(/대\s*부\s*고\s*등\s*학\s*교\s*\d{4}년\s*\d{1,2}월\s*\d{1,2}일[^\n]*/g, ' ')
+        // 2) 페이지 최하단 단독 학교명 직인 제거 (예: 줄 전체가 "대부고등학교" 또는 "대 부 고 등 학 교"인 경우)
+        .replace(/^\s*대\s*부\s*고\s*등\s*학\s*교\s*$/gm, ' ')
+        // 3) 상단 사용자명·반·학년 헤더 제거 (예: 사용자명 : 박수빈 3학년 1반 2026.11.16.)
+        .replace(/사\s*용\s*자\s*명\s*[:：]?\s*[가-힣]{2,4}[^\n]*/g, ' ')
         .replace(/반\s*\d+\s*번\s*호\s*\d+\s*성\s*명\s*[가-힣a-zA-Z\s]+/g, ' ')
         .replace(/10\.131\.[\d.*]+\/[가-힣]+/g, ' ');
     }
 
+    // 표 제목줄 및 열 헤더 판별기 (7, 8번째 사진: "번호 성명 학년 영역 시간 특기사항" 등이 본문과 합쳐지지 않도록 분리)
+    function isTableHeaderLine(line) {
+      const c = line.replace(/\s+/g, '');
+      if (/^대부고등학교$/.test(c)) return true;
+      if (/^(창의적체험활동상황|교과학습발달상황|세부능력및특기사항|행동특성및종합의견|독서활동상황|봉사활동실적|출결상황|수상경력)(\([가-힣]+\))?$/.test(c)) return true;
+      if (/^(번호|학년|반|영역|과목).*(특기사항|이수시간|시간|성명)$/.test(c) && c.length <= 28) return true;
+      if (/^(시간|영역|특기사항)+$/.test(c)) return true;
+      return false;
+    }
+
     function rawLines(p) {
-      return cleanNICEWatermarks(p.text).split('\n').map(l => l.replace(/\s+/g, ' ').trim()).filter(Boolean);
+      return cleanNICEWatermarks(p.text)
+        .split('\n')
+        .map(l => l.replace(/\s+/g, ' ').trim())
+        .filter(l => l && !isTableHeaderLine(l));
     }
 
     function groupByStudent(raw) {
@@ -242,13 +297,6 @@
         const re = /성\s*명\s*[:：]?\s*([가-힣]{2,4})/g;
         while ((m = re.exec(p.text)) !== null) {
           if (!NAME_STOP.some(s => m[1].startsWith(s))) name = m[1];
-        }
-        if (!name) {
-          const re2 = /성\s*명\s*[:：]?\s*([가-힣])\s([가-힣])\s([가-힣])(?![가-힣])/g;
-          while ((m = re2.exec(p.text)) !== null) {
-            const nm = m[1] + m[2] + m[3];
-            if (!NAME_STOP.some(x => nm.startsWith(x))) name = nm;
-          }
         }
         if (!name) {
           const lines = rawLines(p);
@@ -287,7 +335,6 @@
 
       rawPages.forEach(p => {
         const lines = rawLines(p);
-
         const topNameMatch = p.text.match(/성\s*명\s*[:：]?\s*([가-힣]{2,4})/);
         if (topNameMatch && !NAME_STOP.some(s => topNameMatch[1].startsWith(s))) {
           curStudent = topNameMatch[1];
@@ -295,7 +342,6 @@
 
         for (let i = 0; i < lines.length; i++) {
           const line = lines[i];
-
           const rowStart = line.match(/^(\d{1,2})\s+([가-힣]{2,4})(?:\s+([1-3]))?(?:\s|$)/);
           if (rowStart && !NAME_STOP.includes(rowStart[2])) {
             curStudent = rowStart[2];
@@ -347,13 +393,7 @@
             if (foundHours !== null) {
               const isDup = records.some(r => r.page === p.page && r.student === curStudent && r.areaName === areaName && r.hours === foundHours);
               if (!isDup) {
-                records.push({
-                  page: p.page,
-                  student: curStudent,
-                  grade: rowGrade,
-                  areaName,
-                  hours: foundHours
-                });
+                records.push({ page: p.page, student: curStudent, grade: rowGrade, areaName, hours: foundHours });
               }
             }
           }
@@ -363,158 +403,160 @@
       return records;
     }
 
+    // =========================================================
+    // [수정 2, 3, 4, 5] 페이지 간 문장 병합 + 날짜 온점 보호 + 본문 전용 문장 분리
+    // =========================================================
+    function splitProtectedSentences(rawText) {
+      if (!rawText) return [];
+      // 1) 날짜 범위 및 단일 날짜 내 모든 온점(.)을 보호 토큰(§)으로 치환하여 문장 분리 오작동 원천 차단
+      let protectedText = rawText
+        .replace(/\s{2,}/g, ' ')
+        // 예: 2026.03.01.-2026.08.17. 또는 2026.03.13.
+        .replace(/(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})\.(?:\s*[-~]\s*(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})\.)?/g, (m) => {
+          return m.replace(/\./g, '§');
+        })
+        .replace(/구\s*\.\s*공\s*\.\s*탄\s*\./g, '구§공§탄§');
+
+      // 2) 종결 마침표 뒤 공백 기준으로 문장 분리 (단, 닫는 괄호/따옴표 뒤는 문장 종결일 때만 분리)
+      const rawSents = protectedText.split(/(?<=[.!?])\s+/);
+
+      return rawSents
+        .map(rs => rs.replace(/§/g, '.').trim())
+        .filter(s => s.length >= 6 && !isTableHeaderLine(s) && !/^(성명|생년월일|학년|반|번호|출결상황|수상경력|자격증|창의적|교과학습|독서활동|행동특성)/.test(s));
+    }
+
     function detectPageAndLineAreas(rawPages) {
       const detectedAreaSet = new Set();
       const studentSet = new Set();
+      const allBlocks = [];
 
-      const parsedPages = rawPages.map(p => {
+      let carrySection = "미분류";
+      let carryStudent = "이름 미확인";
+      let carrySubject = null;
+
+      rawPages.forEach(p => {
         const cleaned = cleanNICEWatermarks(p.text);
         const lines = cleaned.split('\n').map(l => l.replace(/\s+/g, ' ').trim()).filter(Boolean);
         const compactFull = cleaned.replace(/\s+/g, '');
 
-        let defaultArea = "미분류";
-        let detectedSubject = null;
-
-        if (/창의적체험활동상황\(자율활동\)|창의적체험활동\(자율\)/.test(compactFull)) {
-          defaultArea = "자율";
-        } else if (/창의적체험활동상황\(동아리활동\)|창의적체험활동\(동아리\)/.test(compactFull)) {
-          defaultArea = "동아리";
-        } else if (/창의적체험활동상황\(진로활동\)|창의적체험활동\(진로\)/.test(compactFull)) {
-          defaultArea = "진로";
-        } else if (/봉사활동실적/.test(compactFull) && !/세부능력및특기사항/.test(compactFull)) {
-          defaultArea = "봉사";
-        } else if (/세부능력및특기사항|교과학습발달상황/.test(compactFull) && !/창의적체험활동/.test(compactFull)) {
-          defaultArea = "세특";
-        } else if (/독서활동상황/.test(compactFull) && !/창의적체험활동/.test(compactFull)) {
-          defaultArea = "독서";
-        } else if (/행동특성및종합의견/.test(compactFull) && !/창의적체험활동/.test(compactFull)) {
-          defaultArea = "행특";
-        }
-
-        let currentSection = defaultArea;
-        let currentStudent = "이름 미확인";
-        const taggedLines = [];
+        if (/창의적체험활동상황\(자율활동\)|창의적체험활동\(자율\)/.test(compactFull)) carrySection = "자율";
+        else if (/창의적체험활동상황\(동아리활동\)|창의적체험활동\(동아리\)/.test(compactFull)) carrySection = "동아리";
+        else if (/창의적체험활동상황\(진로활동\)|창의적체험활동\(진로\)/.test(compactFull)) carrySection = "진로";
+        else if (/봉사활동실적/.test(compactFull) && !/세부능력및특기사항/.test(compactFull)) carrySection = "봉사";
+        else if (/세부능력및특기사항|교과학습발달상황/.test(compactFull) && !/창의적체험활동/.test(compactFull)) carrySection = "세특";
+        else if (/독서활동상황/.test(compactFull) && !/창의적체험활동/.test(compactFull)) carrySection = "독서";
+        else if (/행동특성및종합의견/.test(compactFull) && !/창의적체험활동/.test(compactFull)) carrySection = "행특";
 
         lines.forEach(line => {
           const c = line.replace(/\s+/g, '');
 
+          // 영역 전환 헤더 감지 (표 머리글 자체는 본문에 넣지 않고 상태만 전환)
+          if (/창의적체험활동상황\(자율활동\)/.test(c)) { carrySection = "자율"; return; }
+          if (/창의적체험활동상황\(동아리활동\)/.test(c)) { carrySection = "동아리"; return; }
+          if (/창의적체험활동상황\(진로활동\)/.test(c)) { carrySection = "진로"; return; }
+          if (/^\d?\.?창의적체험활동상황/.test(c)) { return; }
+          if (/^\d?\.?봉사활동실적/.test(c)) { carrySection = "봉사"; return; }
+          if (/^\d?\.?교과학습발달상황|세부능력및특기사항/.test(c)) { carrySection = "세특"; return; }
+          if (/^\d?\.?독서활동상황/.test(c)) { carrySection = "독서"; return; }
+          if (/^\d?\.?행동특성및종합의견/.test(c)) { carrySection = "행특"; return; }
+          if (/^\d?\.?출결상황/.test(c)) { carrySection = "출결상황"; return; }
+          if (/^\d?\.?수상경력/.test(c)) { carrySection = "수상경력"; return; }
+
+          if (isTableHeaderLine(line)) return;
+
+          // 학생명 감지
           const stMatch = line.match(/성\s*명\s*[:：]?\s*([가-힣]{2,4})/);
           if (stMatch && !NAME_STOP.some(s => stMatch[1].startsWith(s))) {
-            currentStudent = stMatch[1];
-            studentSet.add(currentStudent);
+            carryStudent = stMatch[1];
+            studentSet.add(carryStudent);
           }
 
+          let startsNewStudentRow = false;
           const rowStMatch = line.match(/^(\d{1,2})\s+([가-힣]{2,4})(?:\s+[1-3])?(?:\s+(.+))?$/);
           if (rowStMatch && !NAME_STOP.includes(rowStMatch[2])) {
-            currentStudent = rowStMatch[2];
-            studentSet.add(currentStudent);
+            carryStudent = rowStMatch[2];
+            studentSet.add(carryStudent);
+            startsNewStudentRow = true;
           }
 
-          if (/창의적체험활동상황\(자율활동\)/.test(c)) { currentSection = "자율"; return; }
-          if (/창의적체험활동상황\(동아리활동\)/.test(c)) { currentSection = "동아리"; return; }
-          if (/창의적체험활동상황\(진로활동\)/.test(c)) { currentSection = "진로"; return; }
-          if (/^\d?\.?창의적체험활동상황/.test(c)) { currentSection = "창체"; return; }
-          if (/^\d?\.?봉사활동실적/.test(c)) { currentSection = "봉사"; return; }
-          if (/^\d?\.?교과학습발달상황|세부능력및특기사항/.test(c)) { currentSection = "세특"; return; }
-          if (/^\d?\.?독서활동상황/.test(c)) { currentSection = "독서"; return; }
-          if (/^\d?\.?행동특성및종합의견/.test(c)) { currentSection = "행특"; return; }
-          if (/^\d?\.?출결상황/.test(c)) { currentSection = "출결상황"; return; }
-          if (/^\d?\.?수상경력/.test(c)) { currentSection = "수상경력"; return; }
-
-          if (/(?:^|\s|\d)자율활동(?:\s|\d|$)/.test(line)) {
-            currentSection = "자율";
-          } else if (/(?:^|\s|\d)동아리활동(?:\s|\d|$)/.test(line)) {
-            currentSection = "동아리";
-          } else if (/(?:^|\s|\d)진로활동(?:\s|\d|$)/.test(line)) {
-            currentSection = "진로";
-          }
+          if (/(?:^|\s|\d)자율활동(?:\s|\d|$)/.test(line)) carrySection = "자율";
+          else if (/(?:^|\s|\d)동아리활동(?:\s|\d|$)/.test(line)) carrySection = "동아리";
+          else if (/(?:^|\s|\d)진로활동(?:\s|\d|$)/.test(line)) carrySection = "진로";
 
           const colonSubj = line.match(/^([가-힣ⅠⅡ·\s]{2,14})\s*[:：]\s*(.+)$/);
           if (colonSubj) {
             const cand = colonSubj[1].trim();
             if (SUBJECT_KEYWORDS.some(sk => cand === sk || cand.replace(/\s/g,'') === sk.replace(/\s/g,''))) {
-              currentSection = "세특";
-              detectedSubject = cand;
+              carrySection = "세특";
+              carrySubject = cand;
             }
           }
           for (const sk of SUBJECT_KEYWORDS) {
             const skRe = new RegExp(`(?:^|\\s|[1-3]\\s)${escapeRegExp(sk)}(?:\\s|:|：|$)`);
             if (skRe.test(line) && !line.includes("창의적체험활동")) {
-              if (currentSection === "미분류" || currentSection === "세특") {
-                currentSection = "세특";
-                detectedSubject = sk;
+              if (carrySection === "미분류" || carrySection === "세특") {
+                carrySection = "세특";
+                carrySubject = sk;
               }
               break;
             }
           }
 
-          if (currentSection !== "미분류" && currentSection !== "창체") {
-            detectedAreaSet.add(currentSection);
+          if (carrySection !== "미분류" && carrySection !== "창체") {
+            detectedAreaSet.add(carrySection);
           }
 
+          // 표 앞쪽의 번호/학생명/학년/영역/이수시간 열 데이터를 걷어내고 순수 특기사항 본문만 추출
           let cleanNarrativeLine = line
             .replace(/^\d{1,2}\s+[가-힣]{2,4}\s+[1-3]\s+(?:자율활동|동아리활동|진로활동|봉사활동)\s+\d{1,3}\s*/, '')
             .replace(/^\d{1,2}\s+[가-힣]{2,4}\s+/, '')
+            .replace(/^(?:자율활동|동아리활동|진로활동)\s+\d{1,3}\s*/, '')
             .trim();
 
           if (!cleanNarrativeLine || /^(?:자율활동|동아리활동|진로활동|\d{1,3})$/.test(cleanNarrativeLine)) return;
 
-          taggedLines.push({
-            text: cleanNarrativeLine,
-            area: currentSection,
-            student: currentStudent,
-            subject: detectedSubject
-          });
-        });
+          const lastBlock = allBlocks[allBlocks.length - 1];
+          // [수정 2] 페이지가 바뀌었더라도 동일 학생·동일 영역이고 직전 블록이 문장 종결부호(.!?)로 끝나지 않았다면 한 문단으로 자동 병합
+          const prevUnfinished = lastBlock && !/[.!?][)'"]?$/.test(lastBlock.rawText.trim());
+          const sameContext = lastBlock && lastBlock.area === carrySection && lastBlock.student === carryStudent && lastBlock.subject === carrySubject;
 
-        const blocks = [];
-        taggedLines.forEach(item => {
-          if (/^(번호\s*성명|학년\s*영역|과목\s*세부능력|학교생활기록부\s*창의적|영역\s*시간\s*특기사항)/.test(item.text)) return;
-          const last = blocks[blocks.length - 1];
-          if (last && last.area === item.area && last.student === item.student && last.subject === item.subject) {
-            last.rawText += " " + item.text;
+          if (sameContext && (!startsNewStudentRow || prevUnfinished)) {
+            lastBlock.rawText += " " + cleanNarrativeLine;
+            lastBlock.endPage = p.page;
           } else {
-            blocks.push({
+            allBlocks.push({
               page: p.page,
-              area: item.area,
-              student: item.student,
-              subject: item.subject,
-              rawText: item.text
+              endPage: p.page,
+              area: carrySection,
+              student: carryStudent,
+              subject: carrySubject,
+              rawText: cleanNarrativeLine
             });
           }
         });
+      });
 
-        const sentenceItems = [];
-        blocks.forEach(b => {
-          const protectedText = b.rawText
-            .replace(/\s{2,}/g, ' ')
-            .replace(/(\d{4})\.(\d{1,2})\.(\d{1,2})\./g, '$1§$2§$3§')
-            .replace(/구\s*\.\s*공\s*\.\s*탄\s*\./g, '구§공§탄§');
+      // 블록별로 보호된 문장 분리 후 페이지 구조로 매핑
+      const pageMap = new Map();
+      rawPages.forEach(p => pageMap.set(p.page, { page: p.page, sentenceItems: [] }));
 
-          const rawSents = protectedText.split(/(?<=[.!?])\s+/);
-          rawSents.forEach(rs => {
-            const s = rs.replace(/§/g, '.').trim();
-            if (s.length >= 6 && !/^(성명|생년월일|학년|반|번호|출결상황|수상경력|자격증|창의적|교과학습|독서활동|행동특성)/.test(s)) {
-              sentenceItems.push({
-                page: b.page,
-                area: b.area,
-                student: b.student,
-                subject: b.subject,
-                text: s
-              });
-            }
+      allBlocks.forEach(b => {
+        const sents = splitProtectedSentences(b.rawText);
+        sents.forEach(s => {
+          const targetPageObj = pageMap.get(b.page) || pageMap.get(1);
+          targetPageObj.sentenceItems.push({
+            page: b.page,
+            pageLabel: b.page !== b.endPage ? `${b.page}~${b.endPage}p` : `${b.page}p`,
+            area: b.area,
+            student: b.student,
+            subject: b.subject,
+            text: s
           });
         });
-
-        return {
-          page: p.page,
-          defaultArea,
-          sentenceItems
-        };
       });
 
       return {
-        parsedPages,
+        parsedPages: Array.from(pageMap.values()),
         detectedAreas: Array.from(detectedAreaSet),
         studentCount: studentSet.size
       };
@@ -587,18 +629,16 @@
           if (areaFilter && item.area !== "미분류" && item.area !== areaFilter) return;
           const cleanSentence = item.text.trim();
           if (!cleanSentence || cleanSentence.length < 2) return;
-          if (cleanSentence.includes("10.131.") || (cleanSentence.includes("반") && cleanSentence.includes("번호") && cleanSentence.includes("성명"))) return;
-          if (cleanSentence.includes("(학교)대부고등학교") || cleanSentence.includes("대부중학교 제3학년") || cleanSentence.includes("대부고등학교 제1학년") || cleanSentence.includes("대부고등학교장")) return;
 
           targets.forEach(t => {
             if (cleanSentence.includes(t)) {
-              results.push({ page: item.page, student: item.student, subject: item.subject, word: t, snippet: cleanSentence });
+              results.push({ page: item.page, pageLabel: item.pageLabel, student: item.student, subject: item.subject, word: t, snippet: cleanSentence });
             }
           });
           strictWords.forEach(sw => {
             const regex = new RegExp(`(^|[^a-zA-Z가-힣])${escapeRegExp(sw)}([^a-zA-Z가-힣]|$)`);
             if (regex.test(cleanSentence)) {
-              results.push({ page: item.page, student: item.student, subject: item.subject, word: sw, snippet: cleanSentence });
+              results.push({ page: item.page, pageLabel: item.pageLabel, student: item.student, subject: item.subject, word: sw, snippet: cleanSentence });
             }
           });
         });
@@ -608,7 +648,6 @@
 
     function analyzeTypoAndGrammar(sentence) {
       const clean = sentence.trim();
-
       const hanEngMix = clean.match(/[가-힣]+[a-zA-Z]+|[a-zA-Z]+[가-힣]+/);
       if (hanEngMix) {
         if (!/^(3D|AI|CEO|SNS|ICT|STEAM|VR|AR|IoT|DNA|RNA|pH|CO2|O2)(은|는|이|가|을|를|에|에서|로|으로|와|과|의|도|만|부터|까지)?$/i.test(hanEngMix[0])) {
@@ -617,9 +656,7 @@
       }
 
       const dotNoSpace = clean.match(/[가-힣]\.([가-힣]{2,})/);
-      if (dotNoSpace) {
-        return { word: dotNoSpace[0], reason: `마침표 뒤 띄어쓰기 누락 ('${dotNoSpace[0]}')` };
-      }
+      if (dotNoSpace) return { word: dotNoSpace[0], reason: `마침표 뒤 띄어쓰기 누락 ('${dotNoSpace[0]}')` };
 
       const typoDict = [
         { pattern: /함게/, label: "'함게' → '함께' 오타 의심" },
@@ -646,19 +683,13 @@
       }
 
       const subjObjMismatch = clean.match(/([가-힣]{2,}(?:이|가))\s+(?:유발할|유발하는|유발함|초래할|초래하는|초래함|해결할|해결하는|해결함|분석할|분석하는|분석함|제시할|제시하는|제시함|발휘할|발휘하는|발휘함)/);
-      if (subjObjMismatch) {
-        return { word: subjObjMismatch[0], reason: `조사 호응 오류 의심 ('${subjObjMismatch[1]}' → 목적격 조사 '을/를' 확인)` };
-      }
+      if (subjObjMismatch) return { word: subjObjMismatch[0], reason: `조사 호응 오류 의심 ('${subjObjMismatch[1]}' → 목적격 조사 '을/를' 확인)` };
 
       const possMismatch = clean.match(/([가-힣]{1,5}(?:이|가))\s+(?:일생|변화|원리|과정|중요성|필요성|역할|특징|장단점|의미|가치|개념|구조)(?:이|가|을|를|에|와|과|은|는)/);
-      if (possMismatch) {
-        return { word: possMismatch[0], reason: `관형격 조사('의') 오표기 의심 ('${possMismatch[1]}' → '~의' 확인)` };
-      }
+      if (possMismatch) return { word: possMismatch[0], reason: `관형격 조사('의') 오표기 의심 ('${possMismatch[1]}' → '~의' 확인)` };
 
       const josaMatch = clean.match(/[가-힣]{2,}\s+(을|를|에게|께서)\s+[가-힣]/);
-      if (josaMatch) {
-        return { word: josaMatch[0], reason: "조사 분리 띄어쓰기 오류 의심" };
-      }
+      if (josaMatch) return { word: josaMatch[0], reason: "조사 분리 띄어쓰기 오류 의심" };
 
       if (/(하고|하며|위해|통해|대한|있는|은|는|이|가|을|를)\.$/.test(clean)) {
         return { word: clean.slice(-4), reason: "서술어 누락 또는 문장 미완결(비문) 의심" };
@@ -680,26 +711,18 @@
         p.sentenceItems.forEach(item => {
           if (targetArea && item.area !== "미분류" && item.area !== targetArea) return;
           const clean = item.text.trim();
-          if (!clean || clean.length < 6 || clean.includes("10.131.")) return;
+          if (!clean || clean.length < 6) return;
           checkedCount++;
 
           const res = analyzeTypoAndGrammar(clean);
           if (res) {
-            issues.push({
-              page: item.page,
-              student: item.student,
-              subject: item.subject,
-              word: res.word,
-              snippet: `${clean} ⚠️ [${res.reason}]`
-            });
+            issues.push({ page: item.page, pageLabel: item.pageLabel, student: item.student, subject: item.subject, word: res.word, snippet: `${clean} ⚠️ [${res.reason}]` });
           }
         });
       });
 
       const label = targetArea ? `[${targetArea}]` : "전체 서술 영역";
-      if (targetArea && checkedCount === 0) {
-        return { pass: true, msg: `${label} 해당 문장 없음 (다른 영역 파일)` };
-      }
+      if (targetArea && checkedCount === 0) return { pass: true, msg: `${label} 해당 문장 없음 (다른 영역 파일)` };
       return issues.length > 0
         ? { pass: false, issues, msg: `${label} 맞춤법·오타 및 비문 총 ${issues.length}건 검출` }
         : { pass: true, msg: `${label} 맞춤법 오타 및 문맥 호응 양호 (${checkedCount}문장 검토)` };
@@ -737,7 +760,6 @@
     // 기재점검 규칙 데이터베이스
     // =========================================================
     const ALL_RULES = [
-      // === [공통] ===
       {
         id: 1, area: "공통", grade: [1,2,3],
         title: "사교육 유발 요인 및 자격증 기재 금지",
@@ -751,16 +773,16 @@
       {
         id: 2, area: "공통", grade: [1,2,3],
         title: "고교블라인드 및 학생 실명 노출 여부",
-        req: "(고교블라인드) 학생 출신 고교를 알 수 있는 내용(학교명, 재단명, 축제명 등) 및 서술 영역 내 학생 본인 실명 직접 노출 금지",
+        req: "(고교블라인드) 학생 출신 고교를 알 수 있는 내용(학교명, 재단명, 축제명 등) 및 서술 영역 내 학생 본인 실명 직접 노출 금지 (※ 문서 상·하단 출력 학교명 제외)",
         check: function(f, n, raw) {
           const issues = findKeywordLocations(n, ['대부', '고등학교']);
           n.forEach(p => {
             p.sentenceItems.forEach(item => {
               if (!item.student || item.student === "이름 미확인") return;
               const clean = item.text.trim();
-              if (!clean || clean.includes("성명") || clean.includes("10.131.")) return;
+              if (!clean || clean.includes("성명")) return;
               if (clean.includes(item.student)) {
-                issues.push({ page: item.page, student: item.student, subject: item.subject, word: item.student, snippet: clean + ` ⚠️ [서술 내 학생 실명('${item.student}') 노출 의심]` });
+                issues.push({ page: item.page, pageLabel: item.pageLabel, student: item.student, subject: item.subject, word: item.student, snippet: clean + ` ⚠️ [서술 내 학생 실명('${item.student}') 노출 의심]` });
               }
             });
           });
@@ -795,10 +817,10 @@
           n.forEach(p => {
             p.sentenceItems.forEach(item => {
               const clean = item.text.trim();
-              if (!clean || clean.length < 2 || clean.includes("10.131.") || clean.includes("학교생활기록부II")) return;
+              if (!clean || clean.length < 2 || clean.includes("학교생활기록부II")) return;
               const stripped = clean.replace(/\b3\s*[Dd]\b/g, '').replace(/\b[Cc]\s*[Ee]\s*[Oo]\b/g, '').replace(/\b[Aa]\s*[Ii]\b/g, '').replace(/\b[Ii]{2,3}\b/g, '');
               const eng = stripped.match(/[A-Za-z]+/g);
-              if (eng && eng.length > 0) issues.push({ page: item.page, student: item.student, subject: item.subject, word: eng[0], snippet: clean });
+              if (eng && eng.length > 0) issues.push({ page: item.page, pageLabel: item.pageLabel, student: item.student, subject: item.subject, word: eng[0], snippet: clean });
             });
           });
           return issues.length > 0 ? { pass: false, issues, msg: `서술형 항목 내 규정 외 영문 표현 총 ${issues.length}건 검출` } : { pass: true, msg: "불필요한 영문 표현 미검출 (3D, CEO, AI 허용 준수)" };
@@ -817,19 +839,26 @@
       {
         id: 7, area: "공통", grade: [1,2,3],
         title: "명사형 종결어미 및 문장 마침표 검증",
-        req: "창체 3개 영역, 세특, 행발 서술문은 명사형 종결어미(~함., ~임., ~됨., ~이끎., ~밝힘. 등) 및 끝 온점(.) 준수 필수",
+        req: "창체 3개 영역, 세특, 행발 서술문은 명사형 종결어미(~함., ~임., ~됨., ~이끎., ~밝힘. 등) 및 끝 온점(.) 준수 필수 (※ 날짜 마침표 및 페이지 연결 문장 제외)",
         check: function(f, n, raw) {
           const issues = [];
           n.forEach(p => {
             p.sentenceItems.forEach(item => {
               let clean = item.text.trim();
-              if (!clean || clean.length < 6 || clean.includes("10.131.") || clean.includes("대부고등학교장")) return;
+              if (!clean || clean.length < 6) return;
               if (/구\s*\.\s*공\s*\.\s*탄/.test(clean)) return;
-              if (!clean.endsWith('.') && !clean.endsWith('.)') && !clean.endsWith(".'")) {
-                issues.push({ page: item.page, student: item.student, subject: item.subject, word: clean.slice(-4), snippet: clean + " ⚠️ [문장 끝 온점(.) 누락]" });
+
+              // [수정 3] 문장 내 날짜 표기(2026.03.13. 등)는 마침표/종결어미 판정 대상에서 제외하도록 치환 후 끝부분만 검사
+              const withoutDates = clean.replace(/\d{4}\.\s*\d{1,2}\.\s*\d{1,2}\.(?:\s*[-~]\s*\d{4}\.\s*\d{1,2}\.\s*\d{1,2}\.)?/g, '[날짜]');
+
+              if (!withoutDates.endsWith('.') && !withoutDates.endsWith('.)') && !withoutDates.endsWith(".'")) {
+                issues.push({ page: item.page, pageLabel: item.pageLabel, student: item.student, subject: item.subject, word: clean.slice(-4), snippet: clean + " ⚠️ [문장 끝 온점(.) 누락]" });
                 return;
               }
-              const core = clean.replace(/\s+([.)'"]+)$/, '$1').replace(/[.)'"]+$/, '').trim();
+
+              const core = withoutDates.replace(/\s+([.)'"]+)$/, '$1').replace(/[.)'"]+$/, '').trim();
+              if (core.endsWith('[날짜]')) return;
+
               const lastCharCode = core.charCodeAt(core.length - 1);
               let isValid = false;
               if (lastCharCode >= 0xAC00 && lastCharCode <= 0xD7A3) {
@@ -837,7 +866,9 @@
                 if (jong === 16 || jong === 9) isValid = true;
               }
               if (['봄', '줌', '감', '임', '함', '됨'].includes(core.slice(-1))) isValid = true;
-              if (!isValid) issues.push({ page: item.page, student: item.student, subject: item.subject, word: core.slice(-2) + '.', snippet: clean });
+              if (!isValid) {
+                issues.push({ page: item.page, pageLabel: item.pageLabel, student: item.student, subject: item.subject, word: core.slice(-2) + '.', snippet: clean });
+              }
             });
           });
           return issues.length > 0 ? { pass: false, issues, msg: `명사형 종결어미 위반 및 온점 누락 총 ${issues.length}건 검출` } : { pass: true, msg: "명사형 종결어미 및 문장 마침표 규격 준수 확인" };
@@ -856,9 +887,7 @@
         id: 9, area: "공통", grade: [1,2,3],
         title: "맞춤법·자판 오타 및 조사·문맥 비문 전체 점검",
         req: "한영 전환 오타(ghkf용), 자판 오타(함게, 뒹, 업무롤, 연관시팀), 동음이의어 오표기(사고 역력, 희망 분양, 적극적이), 조사 호응 오류(거부감이 유발할, 별이 일생) 및 비문 전수 검출",
-        check: function(f, n, raw) {
-          return runAreaTypoCheck(n, null);
-        }
+        check: function(f, n, raw) { return runAreaTypoCheck(n, null); }
       },
       {
         id: 10, area: "공통", grade: [1,2,3],
@@ -871,11 +900,11 @@
               const clean = item.text.trim();
               if (!clean) return;
               const doubleDot = clean.match(/\b\d{4}\.\.\d{1,2}\.\d{1,2}\.?/);
-              if (doubleDot) { issues.push({ page: item.page, student: item.student, subject: item.subject, word: doubleDot[0], snippet: clean + " ⚠️ [날짜 온점 2개(..) 오류]" }); return; }
+              if (doubleDot) { issues.push({ page: item.page, pageLabel: item.pageLabel, student: item.student, subject: item.subject, word: doubleDot[0], snippet: clean + " ⚠️ [날짜 온점 2개(..) 오류]" }); return; }
               const spaceDate = clean.match(/\b\d{4}\.\s+\d{1,2}\.|\b\d{4}\.\d{1,2}\.\s+\d{1,2}\./);
-              if (spaceDate) { issues.push({ page: item.page, student: item.student, subject: item.subject, word: spaceDate[0], snippet: clean + " ⚠️ [날짜 내 비정상 공백 오류]" }); return; }
+              if (spaceDate) { issues.push({ page: item.page, pageLabel: item.pageLabel, student: item.student, subject: item.subject, word: spaceDate[0], snippet: clean + " ⚠️ [날짜 내 비정상 공백 오류]" }); return; }
               const missingEndDot = clean.match(/\b(\d{4}\.\d{1,2}\.\d{1,2})(?!\.)/);
-              if (missingEndDot) issues.push({ page: item.page, student: item.student, subject: item.subject, word: missingEndDot[0], snippet: clean + " ⚠️ [날짜 끝 온점(.) 누락 오류]" });
+              if (missingEndDot) issues.push({ page: item.page, pageLabel: item.pageLabel, student: item.student, subject: item.subject, word: missingEndDot[0], snippet: clean + " ⚠️ [날짜 끝 온점(.) 누락 오류]" });
             });
           });
           return issues.length > 0 ? { pass: false, issues, msg: `잘못된 날짜 표기 형식 총 ${issues.length}건 검출` } : { pass: true, msg: "날짜 표준 표기 규격(YYYY.MM.DD.) 모두 준수" };
@@ -999,9 +1028,7 @@
         hoursAreaKey: "자율",
         title: "자율활동 이수시간 확인 (사용자 기준 입력)",
         req: "창의적 체험활동 상황의 자율활동 이수시간이 아래 입력한 기준 시간과 일치하는지 전수 확인",
-        check: function(f, n, raw) {
-          return checkUserDefinedHours('자율', '자율활동');
-        }
+        check: function(f, n, raw) { return checkUserDefinedHours('자율', '자율활동'); }
       },
       {
         id: 17, area: "자율", grade: [1,2,3],
@@ -1009,11 +1036,9 @@
         req: "학급자치회(회장 1명, 부회장 1명) 및 전교자치회 임원 종류와 재임기간(1·2학년: 3월 1일~학년말, 3학년: 3월 1일~졸업일) 정확성 더블체크 (년, 월, 일 전체 기간 표기)",
         check: function(f, n, raw) {
           const issues = [];
+          const officerRegex = /(학\s*급\s*자\s*치\s*[회희]|전\s*교\s*자\s*치\s*[회희]|학\s*생\s*자\s*치\s*[회희]|자\s*치\s*[회희]\s*임\s*원|학\s*급\s*임\s*원|학\s*생\s*회\s*임\s*원|학\s*급\s*회\s*장|학\s*급\s*부\s*회\s*장|전\s*교\s*회\s*장|전\s*교\s*부\s*회\s*장|자\s*치\s*[회희]|(?:회\s*장|부\s*회\s*장|부\s*장|차\s*장)\s*\(\s*\d{4}\s*\.)/;
 
-          // 공백 유무와 무관하게 자치회/임원 직책을 포착하는 패턴
-          const officerRegex = /(학\s*급\s*자\s*치\s*회|전\s*교\s*자\s*치\s*회|학\s*생\s*자\s*치\s*회|자\s*치\s*회\s*임\s*원|학\s*급\s*임\s*원|학\s*생\s*회\s*임\s*원|학\s*급\s*회\s*장|학\s*급\s*부\s*회\s*장|전\s*교\s*회\s*장|전\s*교\s*부\s*회\s*장|(?:회\s*장|부\s*회\s*장|부\s*장|차\s*장)\s*\(\s*\d{4}\s*\.)/;
-
-          // 1) sentenceItems 전체 검색
+          // [수정 5] 보호된 전체 문장(sentenceItems)에서 발췌하여 재임기간 괄호 및 전체 문장이 끝까지 표시되도록 함
           n.forEach(p => {
             p.sentenceItems.forEach(item => {
               const clean = item.text.trim();
@@ -1021,49 +1046,13 @@
               if (m) {
                 issues.push({
                   page: item.page,
+                  pageLabel: item.pageLabel,
                   student: item.student,
                   word: m[0],
                   snippet: clean
                 });
               }
             });
-          });
-
-          // 2) 원본 페이지 텍스트(rawPages)에서 줄 단위 직접 스캔 (앞뒤 줄 결합으로 잘림 방지)
-          raw.forEach(p => {
-            const lines = rawLines(p);
-            let curStudent = "이름 미확인";
-            const topNameMatch = p.text.match(/성\s*명\s*[:：]?\s*([가-힣]{2,4})/);
-            if (topNameMatch && !NAME_STOP.some(s => topNameMatch[1].startsWith(s))) {
-              curStudent = topNameMatch[1];
-            }
-
-            for (let i = 0; i < lines.length; i++) {
-              const line = lines[i];
-              const rowStMatch = line.match(/^(\d{1,2})\s+([가-힣]{2,4})(?:\s+[1-3])?(?:\s|$)/);
-              if (rowStMatch && !NAME_STOP.includes(rowStMatch[2])) {
-                curStudent = rowStMatch[2];
-              }
-
-              const m = line.match(officerRegex);
-              if (m) {
-                const combined = [lines[i], lines[i + 1]]
-                  .filter(Boolean)
-                  .join(' ')
-                  .replace(/^\d{1,2}\s+[가-힣]{2,4}\s+[1-3]\s+(?:자율활동|동아리활동|진로활동)\s+\d{1,3}\s*/, '')
-                  .trim();
-
-                const isDup = issues.some(iss => iss.page === p.page && iss.snippet.replace(/\s/g,'').includes(m[0].replace(/\s/g,'')));
-                if (!isDup) {
-                  issues.push({
-                    page: p.page,
-                    student: curStudent,
-                    word: m[0],
-                    snippet: combined
-                  });
-                }
-              }
-            }
           });
 
           return issues.length > 0
@@ -1075,9 +1064,7 @@
         id: 18, area: "자율", grade: [1,2,3],
         title: "[자율] 맞춤법·띄어쓰기 및 어색한 문장 점검",
         req: "자율활동 특기사항 문장 내 오타, 조사 호응 오류, 비문 집중 점검",
-        check: function(f, n, raw) {
-          return runAreaTypoCheck(n, "자율");
-        }
+        check: function(f, n, raw) { return runAreaTypoCheck(n, "자율"); }
       },
 
       // === [동아리] ===
@@ -1086,17 +1073,13 @@
         hoursAreaKey: "동아리",
         title: "동아리활동 이수시간 확인 (사용자 기준 입력)",
         req: "창의적 체험활동 상황의 동아리활동 이수시간이 아래 입력한 기준 시간과 일치하는지 전수 확인",
-        check: function(f, n, raw) {
-          return checkUserDefinedHours('동아리', '동아리활동');
-        }
+        check: function(f, n, raw) { return checkUserDefinedHours('동아리', '동아리활동'); }
       },
       {
         id: 20, area: "동아리", grade: [1,2,3],
         title: "[동아리] 맞춤법·띄어쓰기 및 어색한 문장 점검",
         req: "동아리활동 특기사항 문장 내 오타, 조사 호응 오류, 비문 집중 점검",
-        check: function(f, n, raw) {
-          return runAreaTypoCheck(n, "동아리");
-        }
+        check: function(f, n, raw) { return runAreaTypoCheck(n, "동아리"); }
       },
 
       // === [진로] ===
@@ -1105,17 +1088,13 @@
         hoursAreaKey: "진로",
         title: "진로활동 이수시간 확인 (사용자 기준 입력)",
         req: "창의적 체험활동 상황의 진로활동 이수시간이 아래 입력한 기준 시간과 일치하는지 전수 확인",
-        check: function(f, n, raw) {
-          return checkUserDefinedHours('진로', '진로활동');
-        }
+        check: function(f, n, raw) { return checkUserDefinedHours('진로', '진로활동'); }
       },
       {
         id: 22, area: "진로", grade: [1,2,3],
         title: "[진로] 맞춤법·띄어쓰기 및 어색한 문장 점검",
         req: "진로활동 특기사항 문장 내 오타(희망 분양 등), 조사 호응 오류, 비문 집중 점검",
-        check: function(f, n, raw) {
-          return runAreaTypoCheck(n, "진로");
-        }
+        check: function(f, n, raw) { return runAreaTypoCheck(n, "진로"); }
       },
 
       // === [봉사] ===
@@ -1153,13 +1132,7 @@
               const clean = item.text.trim();
               const m = clean.match(zeroHourPattern);
               if (m) {
-                issues.push({
-                  page: item.page,
-                  student: item.student,
-                  subject: item.subject,
-                  word: m[0],
-                  snippet: clean
-                });
+                issues.push({ page: item.page, pageLabel: item.pageLabel, student: item.student, subject: item.subject, word: m[0], snippet: clean });
               }
             });
           });
@@ -1173,9 +1146,7 @@
         id: 25, area: "세특", grade: [1,2,3],
         title: "[과세특] 맞춤법·띄어쓰기 및 어색한 문장 점검",
         req: "교과별 세부능력 및 특기사항 문장 내 오타, 한영 오타, 조사 호응 오류, 비문 집중 점검",
-        check: function(f, n, raw) {
-          return runAreaTypoCheck(n, "세특");
-        }
+        check: function(f, n, raw) { return runAreaTypoCheck(n, "세특"); }
       },
       {
         id: 26, area: "세특", grade: [1,2,3],
@@ -1186,7 +1157,7 @@
           n.forEach(p => {
             p.sentenceItems.forEach(item => {
               if (item.area === "세특" && item.text.length > 10 && item.text.length < 45 && !item.text.includes("이수") && !item.text.includes("과목") && !/순회\s*교육|장기\s*결석|특이\s*사항/.test(item.text)) {
-                issues.push({ page: item.page, student: item.student, subject: item.subject, word: item.text.slice(0, 12), snippet: `[단문 확인] ${item.text}` });
+                issues.push({ page: item.page, pageLabel: item.pageLabel, student: item.student, subject: item.subject, word: item.text.slice(0, 12), snippet: `[단문 확인] ${item.text}` });
               }
             });
           });
@@ -1223,9 +1194,7 @@
         id: 28, area: "행특", grade: [1,2,3],
         title: "[행특] 맞춤법·띄어쓰기 및 어색한 문장 점검",
         req: "행동특성 및 종합의견 문장 내 오타, 조사 호응 오류, 비문 집중 점검",
-        check: function(f, n, raw) {
-          return runAreaTypoCheck(n, "행특");
-        }
+        check: function(f, n, raw) { return runAreaTypoCheck(n, "행특"); }
       },
       {
         id: 29, area: "행특", grade: [1,2,3],
@@ -1234,9 +1203,7 @@
         check: function(f, n, raw) {
           const issues = [];
           const hasAnyBehaviorDoc = raw.some(p => p.text.replace(/\s/g,'').includes('행동특성및종합의견'));
-          if (!hasAnyBehaviorDoc) {
-            return { pass: true, msg: "행동특성 및 종합의견 해당 문서 아님 (미포함)" };
-          }
+          if (!hasAnyBehaviorDoc) return { pass: true, msg: "행동특성 및 종합의견 해당 문서 아님 (미포함)" };
           groupByStudent(raw).forEach((pages, student) => {
             const hasBehavior = pages.some(p => p.text.replace(/\s/g,'').includes('행동특성및종합의견'));
             if (!hasBehavior) {
@@ -1249,24 +1216,51 @@
     ];
 
     // =========================================================
-    // PDF 파싱 및 자동 영역 분류 실행
+    // PDF·스캔 이미지 통합 파싱 (디지털 텍스트 + OCR 자동 전환)
     // =========================================================
     async function handleFile(event) {
       const file = event.target.files[0];
       if (!file) return;
 
       const loadingEl = document.getElementById('loadingText');
+      const progressWrap = document.getElementById('ocrProgressWrap');
+      const progressBar = document.getElementById('ocrProgressBar');
+
       loadingEl.style.display = 'block';
+      loadingEl.textContent = `⏳ "${file.name}" 구조를 분석하고 있습니다...`;
+      progressWrap.style.display = 'none';
+      progressBar.style.width = '0%';
       document.getElementById('uploadTitle').textContent = `분석 중: ${file.name}`;
+
+      let ocrWorker = null;
+      let ocrUsedCount = 0;
 
       try {
         const rawPages = [];
-        if (file.name.toLowerCase().endsWith('.txt')) {
+        const lowerName = file.name.toLowerCase();
+
+        if (lowerName.endsWith('.txt')) {
           const text = await file.text();
           rawPages.push({ page: 1, text });
+        } else if (lowerName.endsWith('.png') || lowerName.endsWith('.jpg') || lowerName.endsWith('.jpeg')) {
+          progressWrap.style.display = 'block';
+          loadingEl.textContent = `🔍 스캔 이미지 문자 판독(OCR) 준비 중...`;
+          ocrWorker = await Tesseract.createWorker('kor+eng', 1, {
+            logger: m => {
+              if (m.status === 'recognizing text') {
+                progressBar.style.width = `${Math.round(m.progress * 100)}%`;
+              }
+            }
+          });
+          const imgUrl = URL.createObjectURL(file);
+          const { data: { text } } = await ocrWorker.recognize(imgUrl);
+          URL.revokeObjectURL(imgUrl);
+          rawPages.push({ page: 1, text: normalizeOCRText(text) });
+          ocrUsedCount = 1;
         } else {
           const arrayBuffer = await file.arrayBuffer();
           const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+
           for (let i = 1; i <= pdf.numPages; i++) {
             const page = await pdf.getPage(i);
             const content = await page.getTextContent();
@@ -1281,13 +1275,38 @@
               pageText += item.str;
               lastY = item.transform[5];
             });
+
+            if (pageText.replace(/\s/g, '').length < 30) {
+              progressWrap.style.display = 'block';
+              if (!ocrWorker) {
+                loadingEl.textContent = `🔍 스캔 PDF 감지 — 한국어·영어 OCR 판독 엔진을 불러오는 중...`;
+                ocrWorker = await Tesseract.createWorker('kor+eng', 1, {
+                  logger: m => {
+                    if (m.status === 'recognizing text') {
+                      const base = ((i - 1) / pdf.numPages) * 100;
+                      const step = (m.progress / pdf.numPages) * 100;
+                      progressBar.style.width = `${Math.round(base + step)}%`;
+                    }
+                  }
+                });
+              }
+              loadingEl.textContent = `🔍 스캔 PDF 문자 판독(OCR) 진행 중... (${i} / ${pdf.numPages} 페이지)`;
+
+              const viewport = page.getViewport({ scale: 2.5 });
+              const canvas = document.createElement('canvas');
+              canvas.width = viewport.width;
+              canvas.height = viewport.height;
+              const ctx = canvas.getContext('2d');
+              await page.render({ canvasContext: ctx, viewport }).promise;
+              preprocessCanvasForOCR(canvas);
+
+              const { data: { text: ocrText } } = await ocrWorker.recognize(canvas);
+              pageText = normalizeOCRText(ocrText);
+              ocrUsedCount++;
+            }
+
             rawPages.push({ page: i, text: pageText });
           }
-        }
-
-        const totalExtractedChars = rawPages.reduce((sum, p) => sum + p.text.replace(/\s/g, '').length, 0);
-        if (totalExtractedChars < 30) {
-          alert("⚠️ 업로드하신 PDF에서 텍스트가 추출되지 않았습니다.\n스캔(이미지)으로 저장된 PDF 파일일 가능성이 높습니다. 나이스에서 'PDF로 저장'한 원본 디지털 PDF 파일을 업로드해 주세요.");
         }
 
         const { parsedPages, detectedAreas, studentCount } = detectPageAndLineAreas(rawPages);
@@ -1303,12 +1322,13 @@
           studentCount
         };
 
-        const areaLabel = detectedAreas.length > 0 ? detectedAreas.join(', ') : (totalExtractedChars < 30 ? '텍스트 미추출(스캔본 의심)' : '전체/일반 서식');
+        const modeTag = ocrUsedCount > 0 ? `스캔 OCR 판독 ${ocrUsedCount}p 적용` : '디지털 PDF 추출';
+        const areaLabel = detectedAreas.length > 0 ? detectedAreas.join(', ') : '전체/일반 서식';
         const hourCountInfo = activityHourRecords.length > 0 ? ` · 이수시간 표 ${activityHourRecords.length}건 추출` : '';
         document.getElementById('fileMetaInfo').textContent =
-          `파일명: ${file.name} (총 ${rawPages.length}페이지 · 추출 글자수 ${totalExtractedChars}자 · 학생 ${studentCount}명 인식 · 감지된 영역: ${areaLabel}${hourCountInfo})`;
+          `파일명: ${file.name} (${modeTag} · 총 ${rawPages.length}페이지 · 학생 ${studentCount}명 인식 · 영역: ${areaLabel}${hourCountInfo})`;
         document.getElementById('detectedDocBadge').textContent =
-          `📂 자동 인식된 영역: ${areaLabel}`;
+          `📂 ${modeTag} | 감지 영역: ${areaLabel}`;
         document.getElementById('uploadTitle').textContent =
           `✅ ${file.name} 분석 완료 (다른 파일로 변경하려면 클릭)`;
         document.getElementById('alertBadge').textContent = "점검 완료";
@@ -1318,7 +1338,9 @@
         console.error(err);
         alert("파일을 분석하는 중 오류가 발생했습니다: " + err.message);
       } finally {
+        if (ocrWorker) await ocrWorker.terminate();
         loadingEl.style.display = 'none';
+        progressWrap.style.display = 'none';
       }
     }
 
@@ -1357,9 +1379,7 @@
       let pendingCount = uploadedData ? 0 : gradeRules.length;
 
       const evaluatedRules = gradeRules.map(rule => {
-        if (!uploadedData) {
-          return { ...rule, result: null };
-        }
+        if (!uploadedData) return { ...rule, result: null };
         const res = rule.check(uploadedData.fullText, uploadedData.narrativePages, uploadedData.rawPages);
         if (res.pass) {
           passCount++;
