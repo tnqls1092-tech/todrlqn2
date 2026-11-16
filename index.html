@@ -134,7 +134,7 @@
       <div class="upload-icon">📄</div>
       <div class="upload-title" id="uploadTitle">생활기록부 PDF 파일을 업로드하세요</div>
       <div class="upload-desc" id="uploadDesc">클릭하거나 PDF 파일을 이곳에 끌어다 놓으세요. (전체 생활기록부 및 영역별·교과세특 출력물 자동 구분)</div>
-      <div class="status-analyzing" id="loadingText">⏳ PDF 페이지별 영역, 학생명, 텍스트 및 위치를 정밀 분석하고 있습니다...</div>
+      <div class="status-analyzing" id="loadingText">⏳ PDF 페이지별 영역, 학생명, 이수시간, 텍스트를 정밀 분석하고 있습니다...</div>
     </div>
 
     <div class="alert-banner">
@@ -183,16 +183,15 @@
     // =========================================================
     let currentGrade = 1;
     let currentArea = "전체";
-    let uploadedData = null; // { fileName, fullText, rawPages, narrativePages, detectedAreas }
+    let uploadedData = null;
 
-    // 사용자가 직접 입력하는 영역별 기준 이수시간 (빈 값이면 미입력 상태 안내)
     const userTargetHours = {
       '자율': '',
       '동아리': '',
       '진로': ''
     };
 
-    const statusStore = {}; // 드롭다운 선택값 유지용
+    const statusStore = {};
 
     function escapeRegExp(string) {
       return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -211,16 +210,15 @@
       return safeSnippet.replace(regex, `<span class="highlight-word">${safeWord}</span>`);
     }
 
-    // 사용자 입력 이수시간 변경 핸들러
     function updateTargetHours(area, val) {
       userTargetHours[area] = val.trim();
       renderDashboard();
     }
 
     // =========================================================
-    // 나이스 워터마크 정제 및 학생·영역·과목 자동 분류 엔진
+    // 나이스 워터마크 정제 및 학생·영역·이수시간 통합 파싱 엔진
     // =========================================================
-    const NAME_STOP = ['생년월일','주민등록','성별','학생정보','반번호','학교','담임','특기사항','이수시간','학년','영역','과목','번호','성명'];
+    const NAME_STOP = ['생년월일','주민등록','성별','학생정보','반번호','학교','담임','특기사항','이수시간','학년','영역','과목','번호','성명','순회','교육'];
 
     function cleanNICEWatermarks(text) {
       if (!text) return "";
@@ -235,13 +233,11 @@
       return cleanNICEWatermarks(p.text).split('\n').map(l => l.replace(/\s+/g, ' ').trim()).filter(Boolean);
     }
 
-    // 학생 단위 분리 (전체 생기부 '성명: 홍길동' + 영역별 표 '2 강현준 3 자율활동 52' 모두 인식)
     function groupByStudent(raw) {
       const map = new Map();
       let cur = "이름 미확인";
       raw.forEach(p => {
         let name = null, m;
-        // 1) 표준 생기부 상단 '성명 : 홍길동'
         const re = /성\s*명\s*[:：]?\s*([가-힣]{2,4})/g;
         while ((m = re.exec(p.text)) !== null) {
           if (!NAME_STOP.some(s => m[1].startsWith(s))) name = m[1];
@@ -253,11 +249,10 @@
             if (!NAME_STOP.some(x => nm.startsWith(x))) name = nm;
           }
         }
-        // 2) 영역별/과목별 일람표 행 패턴: "번호(1~40) 성명(한글2~4자) 학년(1~3) 영역/과목"
         if (!name) {
           const lines = rawLines(p);
           for (const line of lines) {
-            const rowMatch = line.match(/^\d{1,2}\s+([가-힣]{2,4})\s+[1-3]\s+(?:자율활동|동아리활동|진로활동|봉사활동|[가-힣ⅠⅡ]+)\b/);
+            const rowMatch = line.match(/^\d{1,2}\s+([가-힣]{2,4})\b/);
             if (rowMatch && !NAME_STOP.includes(rowMatch[1])) {
               name = rowMatch[1];
               break;
@@ -271,7 +266,6 @@
       return map;
     }
 
-    // 고등학교 교과/과목명 사전 (과세특 자동 판별용)
     const SUBJECT_KEYWORDS = [
       '국어', '화법과 작문', '독서', '언어와 매체', '문학', '심화 국어', '고전 읽기',
       '수학', '수학Ⅰ', '수학Ⅱ', '미적분', '확률과 통계', '기하', '실용 수학', '경제 수학', '수학과제 탐구',
@@ -285,16 +279,98 @@
       '진로와 직업', '보건', '환경', '논술', '교육학', '심리학', '철학'
     ];
 
-    // 페이지 및 줄 단위 영역 자동 판별기
+    function extractAllActivityHourRecords(rawPages) {
+      const records = [];
+      let curStudent = "이름 미확인";
+      let curGrade = null;
+
+      rawPages.forEach(p => {
+        const lines = rawLines(p);
+
+        const topNameMatch = p.text.match(/성\s*명\s*[:：]?\s*([가-힣]{2,4})/);
+        if (topNameMatch && !NAME_STOP.some(s => topNameMatch[1].startsWith(s))) {
+          curStudent = topNameMatch[1];
+        }
+
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+
+          const rowStart = line.match(/^(\d{1,2})\s+([가-힣]{2,4})(?:\s+([1-3]))?(?:\s|$)/);
+          if (rowStart && !NAME_STOP.includes(rowStart[2])) {
+            curStudent = rowStart[2];
+            if (rowStart[3]) curGrade = parseInt(rowStart[3], 10);
+          }
+
+          const areaTypes = ['자율활동', '동아리활동', '진로활동'];
+          for (const areaName of areaTypes) {
+            const areaRegex = new RegExp(`(?:^|\\s|\\d)${areaName}(?:\\s|\\d|$)`);
+            if (!areaRegex.test(line)) continue;
+
+            let foundHours = null;
+            let rowGrade = curGrade;
+
+            const sameLineMatch = line.match(new RegExp(`(?:([1-3])\\s+)?${areaName}\\s+(\\d{1,3})(?!\\d)`));
+            if (sameLineMatch) {
+              if (sameLineMatch[1]) rowGrade = parseInt(sameLineMatch[1], 10);
+              foundHours = parseInt(sameLineMatch[2], 10);
+            }
+
+            if (foundHours === null) {
+              const compact = line.replace(/\s+/g, '');
+              const compMatch = compact.match(new RegExp(`(\\d)?${areaName}(\\d{1,3})(?!\\d)`));
+              if (compMatch) {
+                if (compMatch[1]) rowGrade = parseInt(compMatch[1], 10);
+                foundHours = parseInt(compMatch[2], 10);
+              }
+            }
+
+            if (foundHours === null) {
+              const neighborOffsets = [1, -1, 2];
+              for (const off of neighborOffsets) {
+                const targetLine = lines[i + off];
+                if (!targetLine) continue;
+                const soloNum = targetLine.match(/^(\d{1,3})$/);
+                if (soloNum) {
+                  foundHours = parseInt(soloNum[1], 10);
+                  break;
+                }
+                const gradeNum = targetLine.match(/^(?:\d{1,2}\s+[가-힣]{2,4}\s+)?([1-3])\s+(\d{1,3})$/);
+                if (gradeNum) {
+                  rowGrade = parseInt(gradeNum[1], 10);
+                  foundHours = parseInt(gradeNum[2], 10);
+                  break;
+                }
+              }
+            }
+
+            if (foundHours !== null) {
+              const isDup = records.some(r => r.page === p.page && r.student === curStudent && r.areaName === areaName && r.hours === foundHours);
+              if (!isDup) {
+                records.push({
+                  page: p.page,
+                  student: curStudent,
+                  grade: rowGrade,
+                  areaName,
+                  hours: foundHours
+                });
+              }
+            }
+          }
+        }
+      });
+
+      return records;
+    }
+
     function detectPageAndLineAreas(rawPages) {
       const detectedAreaSet = new Set();
+      const studentSet = new Set();
 
       const parsedPages = rawPages.map(p => {
         const cleaned = cleanNICEWatermarks(p.text);
         const lines = cleaned.split('\n').map(l => l.replace(/\s+/g, ' ').trim()).filter(Boolean);
         const compactFull = cleaned.replace(/\s+/g, '');
 
-        // 페이지 상단 문서 타이틀로 기본 영역 추론 (예: "학교생활기록부 창의적체험활동상황(자율활동)")
         let defaultArea = "미분류";
         let detectedSubject = null;
 
@@ -314,7 +390,6 @@
           defaultArea = "행특";
         }
 
-        // 페이지 내 행별 영역 추적 (전체 생기부 PDF 또는 혼합 파일 대응)
         let currentSection = defaultArea;
         let currentStudent = "이름 미확인";
         const taggedLines = [];
@@ -322,17 +397,18 @@
         lines.forEach(line => {
           const c = line.replace(/\s+/g, '');
 
-          // 학생명 갱신
           const stMatch = line.match(/성\s*명\s*[:：]?\s*([가-힣]{2,4})/);
           if (stMatch && !NAME_STOP.some(s => stMatch[1].startsWith(s))) {
             currentStudent = stMatch[1];
-          }
-          const rowStMatch = line.match(/^\d{1,2}\s+([가-힣]{2,4})\s+[1-3]\s+(자율활동|동아리활동|진로활동|봉사활동|[가-힣ⅠⅡ]+)\b/);
-          if (rowStMatch && !NAME_STOP.includes(rowStMatch[1])) {
-            currentStudent = rowStMatch[1];
+            studentSet.add(currentStudent);
           }
 
-          // 대단원 헤더 전환 감지
+          const rowStMatch = line.match(/^(\d{1,2})\s+([가-힣]{2,4})(?:\s+[1-3])?(?:\s+(.+))?$/);
+          if (rowStMatch && !NAME_STOP.includes(rowStMatch[2])) {
+            currentStudent = rowStMatch[2];
+            studentSet.add(currentStudent);
+          }
+
           if (/창의적체험활동상황\(자율활동\)/.test(c)) { currentSection = "자율"; return; }
           if (/창의적체험활동상황\(동아리활동\)/.test(c)) { currentSection = "동아리"; return; }
           if (/창의적체험활동상황\(진로활동\)/.test(c)) { currentSection = "진로"; return; }
@@ -344,7 +420,6 @@
           if (/^\d?\.?출결상황/.test(c)) { currentSection = "출결상황"; return; }
           if (/^\d?\.?수상경력/.test(c)) { currentSection = "수상경력"; return; }
 
-          // 창체 표 행의 영역 구분 (예: "자율활동 52 ...", "동아리활동 26 ...", "진로활동 34 ...")
           if (/(?:^|\s|\d)자율활동(?:\s|\d|$)/.test(line)) {
             currentSection = "자율";
           } else if (/(?:^|\s|\d)동아리활동(?:\s|\d|$)/.test(line)) {
@@ -353,7 +428,6 @@
             currentSection = "진로";
           }
 
-          // 과목명 감지 ("과목명 : 문학" 또는 "문학 : ..." 또는 일람표 내 교과명)
           const colonSubj = line.match(/^([가-힣ⅠⅡ·\s]{2,14})\s*[:：]\s*(.+)$/);
           if (colonSubj) {
             const cand = colonSubj[1].trim();
@@ -362,7 +436,6 @@
               detectedSubject = cand;
             }
           }
-          // 일람표 행에 과목명이 포함된 경우 (예: "1 홍길동 1 통합과학 ...")
           for (const sk of SUBJECT_KEYWORDS) {
             const skRe = new RegExp(`(?:^|\\s|[1-3]\\s)${escapeRegExp(sk)}(?:\\s|:|：|$)`);
             if (skRe.test(line) && !line.includes("창의적체험활동")) {
@@ -378,18 +451,23 @@
             detectedAreaSet.add(currentSection);
           }
 
+          let cleanNarrativeLine = line
+            .replace(/^\d{1,2}\s+[가-힣]{2,4}\s+[1-3]\s+(?:자율활동|동아리활동|진로활동|봉사활동)\s+\d{1,3}\s*/, '')
+            .replace(/^\d{1,2}\s+[가-힣]{2,4}\s+/, '')
+            .trim();
+
+          if (!cleanNarrativeLine || /^(?:자율활동|동아리활동|진로활동|\d{1,3})$/.test(cleanNarrativeLine)) return;
+
           taggedLines.push({
-            text: line,
+            text: cleanNarrativeLine,
             area: currentSection,
             student: currentStudent,
             subject: detectedSubject
           });
         });
 
-        // 같은 영역·학생끼리 문장 단위로 묶기
         const blocks = [];
         taggedLines.forEach(item => {
-          // 헤더/표 제목 줄 제외
           if (/^(번호\s*성명|학년\s*영역|과목\s*세부능력|학교생활기록부\s*창의적|영역\s*시간\s*특기사항)/.test(item.text)) return;
           const last = blocks[blocks.length - 1];
           if (last && last.area === item.area && last.student === item.student && last.subject === item.subject) {
@@ -405,7 +483,6 @@
           }
         });
 
-        // 블록별 문장 분리
         const sentenceItems = [];
         blocks.forEach(b => {
           const protectedText = b.rawText
@@ -435,59 +512,22 @@
         };
       });
 
-      return { parsedPages, detectedAreas: Array.from(detectedAreaSet) };
+      return {
+        parsedPages,
+        detectedAreas: Array.from(detectedAreaSet),
+        studentCount: studentSet.size
+      };
     }
 
-    // =========================================================
-    // 이수시간 추출 엔진 (전체 생기부 + 영역별 출력물 표 모두 지원)
-    // =========================================================
-    function getActivityHours(pages, areaName) {
-      const found = [];
-      pages.forEach(p => {
-        const lines = rawLines(p);
-        lines.forEach((line, i) => {
-          // 패턴 1: 영역별 일람표 행 "2 강현준 3 자율활동 52 1학기..."
-          const tableRowMatch = line.match(new RegExp(`(?:^|\\s)([1-3])\\s+${areaName}\\s+(\\d{1,3})(?:\\s|$)`));
-          if (tableRowMatch) {
-            found.push({
-              page: p.page,
-              grade: parseInt(tableRowMatch[1], 10),
-              hours: parseInt(tableRowMatch[2], 10)
-            });
-            return;
-          }
-
-          // 패턴 2: 표준 생기부 표 "자율활동 52" 또는 "3 자율활동 52"
-          const c = line.replace(/\s/g, '');
-          const m = c.match(new RegExp('^(\\d)?' + areaName + '(\\d{1,3})(?!\\d)'));
-          if (m) {
-            found.push({
-              page: p.page,
-              grade: m[1] ? parseInt(m[1], 10) : null,
-              hours: parseInt(m[2], 10)
-            });
-            return;
-          }
-
-          // 패턴 3: 줄바꿈으로 시간이 다음 줄에 위치한 경우
-          const nx = lines[i + 1] ? lines[i + 1].replace(/\s/g, '') : '';
-          if (c === areaName && /^\d{1,3}$/.test(nx)) {
-            found.push({ page: p.page, grade: null, hours: parseInt(nx, 10) });
-          }
-        });
-      });
-      return found;
-    }
-
-    function pickActivityRow(list) {
-      if (!list.length) return null;
-      return list.find(x => x.grade === currentGrade) || list[Math.min(currentGrade, list.length) - 1];
-    }
-
-    // 사용자 입력 기준시간 기반 이수시간 점검 함수
-    function checkUserDefinedHours(raw, areaKey, areaName) {
+    function checkUserDefinedHours(areaKey, areaName) {
       const targetStr = userTargetHours[areaKey];
+      const allRecords = (uploadedData && uploadedData.activityHourRecords) || [];
+      const areaRecords = allRecords.filter(r => r.areaName === areaName);
+
       if (!targetStr || isNaN(parseInt(targetStr, 10))) {
+        const preview = areaRecords.length > 0
+          ? ` (현재 파일에서 ${areaRecords.length}건의 ${areaName} 이수시간 감지됨 — 예: ${areaRecords[0].student} ${areaRecords[0].hours}시간)`
+          : '';
         return {
           pass: false,
           isDoubleCheck: true,
@@ -495,32 +535,17 @@
             page: 1,
             student: "기준 미입력",
             word: `${areaName} 기준시간`,
-            snippet: `위 입력칸에 [${areaName}] 기준 이수시간(숫자)을 입력하시면 파일 내 학생별 이수시간과 자동으로 대조합니다.`
+            snippet: `위 입력칸에 [${areaName}] 기준 이수시간(숫자)을 입력하시면 파일 내 학생별 이수시간과 자동으로 대조합니다.${preview}`
           }],
           msg: `기준 이수시간 미입력 — 위 빈칸에 기준 시간을 입력해 주세요`
         };
       }
 
       const expected = parseInt(targetStr, 10);
-      const issues = [];
-      let checkedStudentCount = 0;
+      const gradeMatched = areaRecords.filter(r => r.grade === null || r.grade === currentGrade);
+      const targetRecords = gradeMatched.length > 0 ? gradeMatched : areaRecords;
 
-      groupByStudent(raw).forEach((pages, student) => {
-        const list = getActivityHours(pages, areaName);
-        if (!list.length) return; // 해당 학생 페이지에 이 영역 표가 없으면 스킵
-        checkedStudentCount++;
-        const row = pickActivityRow(list);
-        if (row.hours !== expected) {
-          issues.push({
-            page: row.page,
-            student,
-            word: `${row.hours}시간`,
-            snippet: `[${student}] ${areaName} 이수시간 ${row.hours}시간 ↔ 입력 기준 ${expected}시간 ⚠️ 불일치`
-          });
-        }
-      });
-
-      if (checkedStudentCount === 0) {
+      if (targetRecords.length === 0) {
         return {
           pass: false,
           isDoubleCheck: true,
@@ -534,9 +559,21 @@
         };
       }
 
+      const issues = [];
+      targetRecords.forEach(r => {
+        if (r.hours !== expected) {
+          issues.push({
+            page: r.page,
+            student: r.student,
+            word: `${r.hours}시간`,
+            snippet: `[${r.student}] ${areaName} 이수시간 ${r.hours}시간 ↔ 입력 기준 ${expected}시간 ⚠️ 불일치`
+          });
+        }
+      });
+
       return issues.length > 0
-        ? { pass: false, issues, msg: `${areaName} 입력 기준(${expected}시간) 불일치 총 ${issues.length}건 검출` }
-        : { pass: true, msg: `검토 대상 ${checkedStudentCount}명 모두 입력 기준(${expected}시간) 일치 확인` };
+        ? { pass: false, issues, msg: `${areaName} 입력 기준(${expected}시간) 불일치 총 ${issues.length}건 검출 (전체 ${targetRecords.length}명 검토)` }
+        : { pass: true, msg: `검토 대상 ${targetRecords.length}명 모두 입력 기준(${expected}시간) 일치 확인` };
     }
 
     // =========================================================
@@ -568,11 +605,9 @@
       return results;
     }
 
-    // 맞춤법·자판 오타·조사·문맥 비문 정밀 분석기 (공통 + 자율/동아리/진로/세특/행특 공용)
     function analyzeTypoAndGrammar(sentence) {
       const clean = sentence.trim();
 
-      // 1. 한영키 전환 오타 (예: ghkf용)
       const hanEngMix = clean.match(/[가-힣]+[a-zA-Z]+|[a-zA-Z]+[가-힣]+/);
       if (hanEngMix) {
         if (!/^(3D|AI|CEO|SNS|ICT|STEAM|VR|AR|IoT|DNA|RNA|pH|CO2|O2)(은|는|이|가|을|를|에|에서|로|으로|와|과|의|도|만|부터|까지)?$/i.test(hanEngMix[0])) {
@@ -580,13 +615,11 @@
         }
       }
 
-      // 2. 마침표 뒤 띄어쓰기 누락
       const dotNoSpace = clean.match(/[가-힣]\.([가-힣]{2,})/);
       if (dotNoSpace) {
         return { word: dotNoSpace[0], reason: `마침표 뒤 띄어쓰기 누락 ('${dotNoSpace[0]}')` };
       }
 
-      // 3. 실제 정정 사례 기반 빈출 오타 사전
       const typoDict = [
         { pattern: /함게/, label: "'함게' → '함께' 오타 의심" },
         { pattern: /(?<![가-힣])뒹(?![가-힣])/, label: "'뒹' → '뒤에' 오타 의심" },
@@ -611,7 +644,6 @@
         if (m) return { word: m[0], reason: item.label };
       }
 
-      // 4. 조사 호응 및 문맥 비문 패턴
       const subjObjMismatch = clean.match(/([가-힣]{2,}(?:이|가))\s+(?:유발할|유발하는|유발함|초래할|초래하는|초래함|해결할|해결하는|해결함|분석할|분석하는|분석함|제시할|제시하는|제시함|발휘할|발휘하는|발휘함)/);
       if (subjObjMismatch) {
         return { word: subjObjMismatch[0], reason: `조사 호응 오류 의심 ('${subjObjMismatch[1]}' → 목적격 조사 '을/를' 확인)` };
@@ -639,14 +671,12 @@
       return null;
     }
 
-    // 영역별 맞춤법·어색한 문장 검사 헬퍼
     function runAreaTypoCheck(n, targetArea) {
       const issues = [];
       let checkedCount = 0;
 
       n.forEach(p => {
         p.sentenceItems.forEach(item => {
-          // targetArea가 지정된 경우 해당 영역 문장만 검사 (미분류 파일이면 전체 검사)
           if (targetArea && item.area !== "미분류" && item.area !== targetArea) return;
           const clean = item.text.trim();
           if (!clean || clean.length < 6 || clean.includes("10.131.")) return;
@@ -674,7 +704,6 @@
         : { pass: true, msg: `${label} 맞춤법 오타 및 문맥 호응 양호 (${checkedCount}문장 검토)` };
     }
 
-    // 봉사활동 행 추출
     function getVolunteerRows(pages) {
       const rows = [];
       pages.forEach(p => {
@@ -729,10 +758,8 @@
               if (!item.student || item.student === "이름 미확인") return;
               const clean = item.text.trim();
               if (!clean || clean.includes("성명") || clean.includes("10.131.")) return;
-              // 일람표 맨 앞 "2 강현준 3 자율활동" 헤더 부분은 제외하고 서술 문장 내 실명 노출만 검출
-              const bodyOnly = clean.replace(/^\d{1,2}\s+[가-힣]{2,4}\s+[1-3]\s+(?:자율활동|동아리활동|진로활동|봉사활동|[가-힣ⅠⅡ]+)\s*\d*\s*/, '');
-              if (bodyOnly.includes(item.student)) {
-                issues.push({ page: item.page, student: item.student, subject: item.subject, word: item.student, snippet: bodyOnly + ` ⚠️ [서술 내 학생 실명('${item.student}') 노출 의심]` });
+              if (clean.includes(item.student)) {
+                issues.push({ page: item.page, student: item.student, subject: item.subject, word: item.student, snippet: clean + ` ⚠️ [서술 내 학생 실명('${item.student}') 노출 의심]` });
               }
             });
           });
@@ -795,7 +822,7 @@
           n.forEach(p => {
             p.sentenceItems.forEach(item => {
               let clean = item.text.trim();
-              if (!clean || clean.length < 6 || clean.includes("10.131.") || clean.includes("대부고등학교장") || clean.includes("특기사항")) return;
+              if (!clean || clean.length < 6 || clean.includes("10.131.") || clean.includes("대부고등학교장")) return;
               if (/구\s*\.\s*공\s*\.\s*탄/.test(clean)) return;
               if (!clean.endsWith('.') && !clean.endsWith('.)') && !clean.endsWith(".'")) {
                 issues.push({ page: item.page, student: item.student, subject: item.subject, word: clean.slice(-4), snippet: clean + " ⚠️ [문장 끝 온점(.) 누락]" });
@@ -972,7 +999,7 @@
         title: "자율활동 이수시간 확인 (사용자 기준 입력)",
         req: "창의적 체험활동 상황의 자율활동 이수시간이 아래 입력한 기준 시간과 일치하는지 전수 확인",
         check: function(f, n, raw) {
-          return checkUserDefinedHours(raw, '자율', '자율활동');
+          return checkUserDefinedHours('자율', '자율활동');
         }
       },
       {
@@ -981,21 +1008,65 @@
         req: "학급자치회(회장 1명, 부회장 1명) 및 전교자치회 임원 종류와 재임기간(1·2학년: 3월 1일~학년말, 3학년: 3월 1일~졸업일) 정확성 더블체크 (년, 월, 일 전체 기간 표기)",
         check: function(f, n, raw) {
           const issues = [];
-          const officerPattern = /(학급자치회|전교자치회|학생자치회|자치회\s*임원|학급\s*임원|학생회\s*임원|반장|부반장|학급\s*회장|학급\s*부회장|전교\s*회장|전교\s*부회장|(?:회장|부회장|부장|차장)\s*\(\s*\d{4}\.)/;
+          const seenKeys = new Set();
 
+          // PDF 글자 사이 공백("학 급 자 치 회", "전 교 자 치 회" 등)까지 허용하는 정규식
+          const officerPattern = /(학\s*급\s*자\s*치\s*회|전\s*교\s*자\s*치\s*회|학\s*생\s*자\s*치\s*회|자\s*치\s*회\s*임\s*원|학\s*급\s*임\s*원|학\s*생\s*회\s*임\s*원|학\s*급\s*회\s*장|학\s*급\s*부\s*회\s*장|전\s*교\s*회\s*장|전\s*교\s*부\s*회\s*장|(?:회\s*장|부\s*회\s*장|부\s*장|차\s*장)\s*\(\s*\d{4}\s*\.)/;
+
+          // 1단계: 분리된 문장(sentenceItems) 전체에서 탐색 (영역 오분류로 누락되지 않도록 전체 검색)
           n.forEach(p => {
             p.sentenceItems.forEach(item => {
-              // 자율활동 또는 미분류 영역에서 임원 기재 문장 탐색
-              if (item.area !== "자율" && item.area !== "미분류") return;
               const clean = item.text.trim();
               const m = clean.match(officerPattern);
               if (m) {
-                issues.push({
-                  page: item.page,
-                  student: item.student,
-                  word: m[0],
-                  snippet: clean
-                });
+                const dedupKey = `${item.page}_${item.student}_${clean.slice(0, 25)}`;
+                if (!seenKeys.has(dedupKey)) {
+                  seenKeys.add(dedupKey);
+                  issues.push({
+                    page: item.page,
+                    student: item.student,
+                    word: m[0],
+                    snippet: clean
+                  });
+                }
+              }
+            });
+          });
+
+          // 2단계: 문장 끝 온점 누락·줄바꿈 등으로 sentenceItems에서 합쳐지거나 누락된 행을 rawPages 줄 단위로 한 번 더 스캔
+          raw.forEach(p => {
+            const lines = rawLines(p);
+            let curStudent = "이름 미확인";
+            const topNameMatch = p.text.match(/성\s*명\s*[:：]?\s*([가-힣]{2,4})/);
+            if (topNameMatch && !NAME_STOP.some(s => topNameMatch[1].startsWith(s))) {
+              curStudent = topNameMatch[1];
+            }
+
+            lines.forEach((line, idx) => {
+              const rowStMatch = line.match(/^(\d{1,2})\s+([가-힣]{2,4})(?:\s+[1-3])?(?:\s|$)/);
+              if (rowStMatch && !NAME_STOP.includes(rowStMatch[2])) {
+                curStudent = rowStMatch[2];
+              }
+
+              const m = line.match(officerPattern);
+              if (m) {
+                // 앞뒤 1줄을 이어 붙여 온전한 문장 형태로 발췌
+                const mergedContext = [lines[idx], lines[idx + 1]]
+                  .filter(Boolean)
+                  .join(' ')
+                  .replace(/^\d{1,2}\s+[가-힣]{2,4}\s+[1-3]\s+(?:자율활동|동아리활동|진로활동)\s+\d{1,3}\s*/, '')
+                  .trim();
+
+                // 이미 1단계에서 동일 페이지·학생·키워드 문장이 잡혔으면 중복 추가 방지
+                const alreadyCaught = issues.some(iss => iss.page === p.page && iss.student === curStudent && iss.snippet.includes(m[0]));
+                if (!alreadyCaught) {
+                  issues.push({
+                    page: p.page,
+                    student: curStudent,
+                    word: m[0],
+                    snippet: mergedContext
+                  });
+                }
               }
             });
           });
@@ -1021,7 +1092,7 @@
         title: "동아리활동 이수시간 확인 (사용자 기준 입력)",
         req: "창의적 체험활동 상황의 동아리활동 이수시간이 아래 입력한 기준 시간과 일치하는지 전수 확인",
         check: function(f, n, raw) {
-          return checkUserDefinedHours(raw, '동아리', '동아리활동');
+          return checkUserDefinedHours('동아리', '동아리활동');
         }
       },
       {
@@ -1040,7 +1111,7 @@
         title: "진로활동 이수시간 확인 (사용자 기준 입력)",
         req: "창의적 체험활동 상황의 진로활동 이수시간이 아래 입력한 기준 시간과 일치하는지 전수 확인",
         check: function(f, n, raw) {
-          return checkUserDefinedHours(raw, '진로', '진로활동');
+          return checkUserDefinedHours('진로', '진로활동');
         }
       },
       {
@@ -1075,6 +1146,36 @@
       // === [세특] ===
       {
         id: 24, area: "세특", grade: [1,2,3],
+        title: "[과세특] 순회교육·장기결석 등 0시간 이수 사유 기재 확인",
+        req: "순회교육 학생, 장기결석 학생 등 수업을 0시간 이수한 학생의 세부능력 및 특기사항에 그 사유(예: '순회 교육으로 특이 사항 없음.', '장기결석으로 특이사항 없음.' 등)가 기재되었는지 발췌 확인",
+        check: function(f, n, raw) {
+          const issues = [];
+          const zeroHourPattern = /(순회\s*교육|장기\s*결석|특이\s*사항\s*없음|0\s*시간|미이수|위탁\s*교육|병원\s*학교)/;
+
+          n.forEach(p => {
+            p.sentenceItems.forEach(item => {
+              if (item.area !== "세특" && item.area !== "미분류") return;
+              const clean = item.text.trim();
+              const m = clean.match(zeroHourPattern);
+              if (m) {
+                issues.push({
+                  page: item.page,
+                  student: item.student,
+                  subject: item.subject,
+                  word: m[0],
+                  snippet: clean
+                });
+              }
+            });
+          });
+
+          return issues.length > 0
+            ? { pass: false, isDoubleCheck: true, issues, msg: `순회교육·장기결석 등 0시간 이수 사유 기재 문구 총 ${issues.length}건 발췌 확인` }
+            : { pass: true, msg: "순회교육·장기결석 등 특이사유 기재 내역 없음" };
+        }
+      },
+      {
+        id: 25, area: "세특", grade: [1,2,3],
         title: "[과세특] 맞춤법·띄어쓰기 및 어색한 문장 점검",
         req: "교과별 세부능력 및 특기사항 문장 내 오타, 한영 오타, 조사 호응 오류, 비문 집중 점검",
         check: function(f, n, raw) {
@@ -1082,14 +1183,14 @@
         }
       },
       {
-        id: 25, area: "세특", grade: [1,2,3],
+        id: 26, area: "세특", grade: [1,2,3],
         title: "[과세특] 과목별 세특 분량·기재 충실도 확인",
-        req: "과목별 세특 미기재 여부 및 지나치게 짧은 문장(60자 미만) 등 충실도 더블체크",
+        req: "과목별 세특 미기재 여부 및 지나치게 짧은 문장(45자 미만) 등 충실도 더블체크 (※ 순회교육·장기결석 사유 문구 제외)",
         check: function(f, n, raw) {
           const issues = [];
           n.forEach(p => {
             p.sentenceItems.forEach(item => {
-              if (item.area === "세특" && item.text.length > 10 && item.text.length < 45 && !item.text.includes("이수") && !item.text.includes("과목")) {
+              if (item.area === "세특" && item.text.length > 10 && item.text.length < 45 && !item.text.includes("이수") && !item.text.includes("과목") && !/순회\s*교육|장기\s*결석|특이\s*사항/.test(item.text)) {
                 issues.push({ page: item.page, student: item.student, subject: item.subject, word: item.text.slice(0, 12), snippet: `[단문 확인] ${item.text}` });
               }
             });
@@ -1100,7 +1201,7 @@
 
       // === [독서] ===
       {
-        id: 26, area: "독서", grade: [1,2,3],
+        id: 27, area: "독서", grade: [1,2,3],
         title: "독서활동상황 도서명(저자) 표기 규격 점검",
         req: "도서명(저자) 형식 준수 여부 및 동일 도서 중복 기재 여부 확인",
         check: function(f, n, raw) {
@@ -1124,7 +1225,7 @@
 
       // === [행특] ===
       {
-        id: 27, area: "행특", grade: [1,2,3],
+        id: 28, area: "행특", grade: [1,2,3],
         title: "[행특] 맞춤법·띄어쓰기 및 어색한 문장 점검",
         req: "행동특성 및 종합의견 문장 내 오타, 조사 호응 오류, 비문 집중 점검",
         check: function(f, n, raw) {
@@ -1132,7 +1233,7 @@
         }
       },
       {
-        id: 28, area: "행특", grade: [1,2,3],
+        id: 29, area: "행특", grade: [1,2,3],
         title: "행동특성 및 종합의견 누락 여부 확인",
         req: "행동특성 및 종합의견 미기재 여부 및 종합 서술 확인",
         check: function(f, n, raw) {
@@ -1189,20 +1290,23 @@
           }
         }
 
-        const studentMap = groupByStudent(rawPages);
-        const { parsedPages, detectedAreas } = detectPageAndLineAreas(rawPages);
+        const { parsedPages, detectedAreas, studentCount } = detectPageAndLineAreas(rawPages);
+        const activityHourRecords = extractAllActivityHourRecords(rawPages);
 
         uploadedData = {
           fileName: file.name,
           fullText: rawPages.map(p => p.text).join('\n'),
           rawPages,
           narrativePages: parsedPages,
-          detectedAreas
+          detectedAreas,
+          activityHourRecords,
+          studentCount
         };
 
         const areaLabel = detectedAreas.length > 0 ? detectedAreas.join(', ') : '전체/일반 서식';
+        const hourCountInfo = activityHourRecords.length > 0 ? ` · 이수시간 표 ${activityHourRecords.length}건 추출` : '';
         document.getElementById('fileMetaInfo').textContent =
-          `파일명: ${file.name} (총 ${rawPages.length}페이지 · 학생 ${studentMap.size}명 인식 · 감지된 영역: ${areaLabel})`;
+          `파일명: ${file.name} (총 ${rawPages.length}페이지 · 학생 ${studentCount}명 인식 · 감지된 영역: ${areaLabel}${hourCountInfo})`;
         document.getElementById('detectedDocBadge').textContent =
           `📂 자동 인식된 영역: ${areaLabel}`;
         document.getElementById('uploadTitle').textContent =
@@ -1310,7 +1414,6 @@
         let statusHtml = `<span class="status-tag status-wait">대기</span>`;
         let detailHtml = `<div style="color:#475569;">${escapeHtml(r.req)}</div>`;
 
-        // 자율 / 동아리 / 진로 이수시간 사용자 입력 빈칸 렌더링
         if (r.hoursAreaKey) {
           const curVal = userTargetHours[r.hoursAreaKey] || '';
           detailHtml += `
