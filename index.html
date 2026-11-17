@@ -85,11 +85,16 @@
     .page-tag { background: #dc2626; color: white; font-weight: 700; font-size: 11px; padding: 2px 7px; border-radius: 4px; margin-right: 6px; display: inline-block; }
     .page-tag.blue { background: #2563eb; }
 
-    /* 학생 이름 레이블 (선명한 파란색 배지) */
+    /* ★ 학생 이름 및 과목명 배지 스타일 */
     .student-badge {
       background: #2563eb; color: white; font-weight: 800; font-size: 11.5px;
-      padding: 2px 8px; border-radius: 4px; margin-right: 6px; display: inline-block;
+      padding: 2px 8px; border-radius: 4px; margin-right: 4px; display: inline-block;
       box-shadow: 0 1px 2px rgba(37,99,235,0.25);
+    }
+    .subject-badge {
+      background: #059669; color: white; font-weight: 800; font-size: 11.5px;
+      padding: 2px 8px; border-radius: 4px; margin-right: 6px; display: inline-block;
+      box-shadow: 0 1px 2px rgba(5,150,105,0.25);
     }
     .highlight-word { background-color: #fef08a; color: #854d0e; font-weight: 700; padding: 1px 4px; border-radius: 3px; border: 1px solid #fde047; }
   </style>
@@ -122,7 +127,7 @@
       <input type="file" id="pdfInput" accept=".pdf, .txt" onchange="handleFile(event)">
       <div class="upload-icon">📄</div>
       <div class="upload-title" id="uploadTitle">생활기록부 PDF 파일을 업로드하세요</div>
-      <div class="upload-desc" id="uploadDesc">클릭하거나 PDF 파일을 이곳에 끌어다 놓으세요. (학생 이름 행/열 정밀 매핑 및 표 서술문 중심 정밀 분석)</div>
+      <div class="upload-desc" id="uploadDesc">클릭하거나 PDF 파일을 이곳에 끌어다 놓으세요. (표 내부 서술 칸 독립 분리 파싱 적용)</div>
       <div class="status-analyzing" id="loadingText">⏳ PDF 페이지별 텍스트 및 위치를 정밀 분석하고 있습니다...</div>
     </div>
 
@@ -170,15 +175,10 @@
   </main>
 
   <script>
-    // =========================================================
-    // 헬퍼 함수
-    // =========================================================
-
     function escapeRegExp(string) {
       return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
 
-    // 파일 하단 꼬리말/워터마크 완전 제거 (1번 해결)
     function cleanNICEWatermarks(text) {
       if (!text) return "";
       return text
@@ -188,7 +188,7 @@
         .replace(/[\d.*]{5,}\/[가-힣]+/g, ' ');
     }
 
-    // 학생 이름 완벽 포함 키워드 탐색
+    // 학생 이름 및 과목명이 정확히 포함된 키워드 탐색
     function findKeywordLocations(narrativePages, targets, strictWords = []) {
       const results = [];
       narrativePages.forEach(p => {
@@ -196,14 +196,12 @@
           const cleanSentence = sentence.trim();
           if (!cleanSentence || cleanSentence.length < 2) return;
 
-          if (cleanSentence.includes("10.131.") || (cleanSentence.includes("반") && cleanSentence.includes("번호") && cleanSentence.includes("성명"))) return;
-          if (cleanSentence.includes("(학교)대부고등학교") || cleanSentence.includes("대부중학교 제3학년") || cleanSentence.includes("대부고등학교 제1학년") || cleanSentence.includes("대부고등학교장")) return;
-
           targets.forEach(t => {
             if (cleanSentence.includes(t)) {
               results.push({
                 page: p.page,
                 student: p.studentName || "학생",
+                subject: p.subjectName || "",
                 word: t,
                 snippet: cleanSentence
               });
@@ -216,6 +214,7 @@
               results.push({
                 page: p.page,
                 student: p.studentName || "학생",
+                subject: p.subjectName || "",
                 word: sw,
                 snippet: cleanSentence
               });
@@ -251,7 +250,6 @@
         }
       },
       {
-        // ★ 2번 해결: '만나는'의 '나는' 오탐지 완전 제거 (독립된 주어 형태만 정밀 감지)
         id: 3, area: "공통",
         title: "1인칭 및 학생 시점 서술 금지",
         req: "동일 문구 복사 기재 및 '나는~', '내가~' 외에도 학생 본인이 쓴 듯한 주관적 소감문·일기형 표현('느꼈다', '생각했다', '깨달았다', '다짐함' 등) 기재 금지 (※ '만나는' 등 동사 활용형 제외)",
@@ -262,18 +260,17 @@
               const clean = s.trim();
               if (!clean) return;
 
-              // 1) 순수 1인칭 대명사 독립형 단어 경계 검색 ('나는', '내가', '저의', '나의' 등)
-              // 앞 글자가 한글이 아닌 독립 단어일 때만 감지 (즉, '만나는'의 '나는'은 제외!)
+              // 순수 독립 주어 검색 ('만나는' 등의 접두형 동사는 완벽 제외)
               const firstPersonMatch = clean.match(/(^|[^가-힣])(나는|내가|저의|나의|저를|나를|저에게|나에게)(?=\s|[.,!?])/);
               if (firstPersonMatch) {
-                issues.push({ page: p.page, student: p.studentName || "학생", word: firstPersonMatch[2], snippet: clean });
+                issues.push({ page: p.page, student: p.studentName, subject: p.subjectName, word: firstPersonMatch[2], snippet: clean });
                 return;
               }
 
-              // 2) 주관적 일기형 어미 검색
+              // 주관적 일기형 어미 검색
               const diaryMatch = clean.match(/(느꼈다|느꼈음|생각했다|생각함|깨달았다|깨달음|뿌듯했다|뿌듯함|다짐했다|다짐함|배웠다|배움)(?=[.,!?\s]|$)/);
               if (diaryMatch) {
-                issues.push({ page: p.page, student: p.studentName || "학생", word: diaryMatch[1], snippet: clean });
+                issues.push({ page: p.page, student: p.studentName, subject: p.subjectName, word: diaryMatch[1], snippet: clean });
               }
             });
           });
@@ -290,7 +287,6 @@
         }
       },
       {
-        // ★ 3번 해결: 외국인 학생 성명(PHUN AON SAHARAT 등)은 영문 검출에서 완전 제외!
         id: 5, area: "공통",
         title: "한글 입력 원칙 (영문 표현 점검)",
         req: "학교생활기록부 문자는 한글 입력 원칙. 서술형 항목 내 모든 영문 표현(단독 알파벳 x, y 포함)은 전수 표시 (※ 외국인 성명, 3D, CEO, AI 및 서식명 II는 공식 허용 예외)",
@@ -299,7 +295,7 @@
           n.forEach(p => {
             p.sentences.forEach(s => {
               const clean = s.trim();
-              if (!clean || clean.length < 2 || clean.includes("10.131.") || clean.includes("학교생활기록부II")) return;
+              if (!clean || clean.length < 2) return;
 
               let stripped = clean
                 .replace(/\b3\s*[Dd]\b/g, '')
@@ -307,16 +303,15 @@
                 .replace(/\b[Aa]\s*[Ii]\b/g, '')
                 .replace(/\b[Ii]{2,3}\b/g, '');
 
-              // 외국인 학생 성명 마스킹 제거
+              // 학생 본인 이름이 영문인 경우 마스킹 제거
               if (p.studentName && /[A-Za-z]/.test(p.studentName)) {
                 stripped = stripped.replace(new RegExp(escapeRegExp(p.studentName), 'gi'), '');
               }
-              // 상단 표에서 딸려올 수 있는 외국인 이름 패턴 제거
               stripped = stripped.replace(/\bPHUN\s*AON\s*SAHARAT\b/gi, '');
 
               const eng = stripped.match(/[A-Za-z]+/g);
               if (eng && eng.length > 0) {
-                issues.push({ page: p.page, student: p.studentName || "학생", word: eng[0], snippet: clean });
+                issues.push({ page: p.page, student: p.studentName, subject: p.subjectName, word: eng[0], snippet: clean });
               }
             });
           });
@@ -334,7 +329,6 @@
         }
       },
       {
-        // ★ 4, 5번 해결: '설명함.', '이끎.' 등 온전한 문장 정상 판정 & 줄바꿈 마침표 복원
         id: 7, area: "공통",
         title: "명사형 종결어미 및 문장 마침표 검증",
         req: "창체 3개 영역, 세특, 행발 서술문은 주어부터 서술어까지 완결된 문장 단위로 검사하며, 명사형 종결어미(~함., ~임., ~됨., ~이끎., ~밝힘. 등) 및 끝 온점(.) 준수 필수 (※ 날짜 마침표는 완전 제외)",
@@ -343,15 +337,15 @@
           n.forEach(p => {
             p.sentences.forEach(s => {
               let clean = s.trim();
-              if (!clean || clean.length < 6 || clean.includes("10.131.") || clean.includes("대부고등학교장") || clean.includes("특기사항")) return;
+              if (!clean || clean.length < 6) return;
 
               // 1) 온점 누락 검사
               if (!clean.endsWith('.') && !clean.endsWith('.)') && !clean.endsWith(".'")) {
-                issues.push({ page: p.page, student: p.studentName || "학생", word: clean.slice(-4), snippet: clean + " ⚠️ [문장 끝 온점(.) 누락]" });
+                issues.push({ page: p.page, student: p.studentName, subject: p.subjectName, word: clean.slice(-4), snippet: clean + " ⚠️ [문장 끝 온점(.) 누락]" });
                 return;
               }
 
-              // 2) 명사형 종결어미 정밀 검사
+              // 2) 명사형 종결어미 판정
               const core = clean.replace(/\s+([.)'"]+)$/, '$1').replace(/[.)'"]+$/, '').trim();
               const lastCharCode = core.charCodeAt(core.length - 1);
               let isValid = false;
@@ -363,7 +357,7 @@
               }
               if (['봄', '줌', '감'].includes(core.slice(-1))) isValid = true;
 
-              if (!isValid) issues.push({ page: p.page, student: p.studentName || "학생", word: core.slice(-2) + '.', snippet: clean });
+              if (!isValid) issues.push({ page: p.page, student: p.studentName, subject: p.subjectName, word: core.slice(-2) + '.', snippet: clean });
             });
           });
           return issues.length > 0 ? { pass: false, issues, msg: `명사형 종결어미 위반 및 온점 누락 총 ${issues.length}건 검출` } : { pass: true, msg: "명사형 종결어미 및 문장 마침표 규격 준수 확인 (이끎, 설명함 등 정상 인정)" };
@@ -379,7 +373,6 @@
         }
       },
       {
-        // ★ 6번 해결: 자간 분리 오타('능력의 를 거') 없이, 실제 띄어쓰기 2칸('설정했던  가설') 및 비문('어휘와 어 사용을') 정밀 적발
         id: 9, area: "공통",
         title: "맞춤법·띄어쓰기 및 비문·어색한 문맥 점검",
         req: "띄어쓰기 2번(다중 공백), 마침표 뒤 띄어쓰기 누락, 비문('어휘와 어 사용을' 등 불완전 단어 결합 및 조사 분리) 전수 점검",
@@ -388,14 +381,15 @@
           n.forEach(p => {
             p.sentences.forEach(s => {
               const clean = s.trim();
-              if (!clean || clean.length < 5 || clean.includes("10.131.")) return;
+              if (!clean || clean.length < 5) return;
 
-              // 1) 띄어쓰기 2칸 이상 연속 오류 감지 ('설정했던  가설' 등)
+              // 1) 띄어쓰기 2칸 이상 연속 오류 감지
               const doubleSpaceMatch = clean.match(/([가-힣A-Za-z0-9]+)\s{2,}([가-힣A-Za-z0-9]+)/);
               if (doubleSpaceMatch) {
                 issues.push({
                   page: p.page,
-                  student: p.studentName || "학생",
+                  student: p.studentName,
+                  subject: p.subjectName,
                   word: doubleSpaceMatch[0],
                   snippet: clean + ` ⚠️ [띄어쓰기 2번 오류 발견: '${doubleSpaceMatch[1]}'과 '${doubleSpaceMatch[2]}' 사이 다중 공백]`
                 });
@@ -407,7 +401,8 @@
               if (brokenWordMatch) {
                 issues.push({
                   page: p.page,
-                  student: p.studentName || "학생",
+                  student: p.studentName,
+                  subject: p.subjectName,
                   word: brokenWordMatch[0],
                   snippet: clean + ` ⚠️ [비문 오타 의심: '${brokenWordMatch[0]}' -> 불완전 단어/호응 오류]`
                 });
@@ -419,7 +414,8 @@
               if (dotNoSpace) {
                 issues.push({
                   page: p.page,
-                  student: p.studentName || "학생",
+                  student: p.studentName,
+                  subject: p.subjectName,
                   word: dotNoSpace[0],
                   snippet: clean + ` ⚠️ [마침표 뒤 띄어쓰기 누락: '${dotNoSpace[0]}']`
                 });
@@ -431,7 +427,8 @@
               if (josaMatch) {
                 issues.push({
                   page: p.page,
-                  student: p.studentName || "학생",
+                  student: p.studentName,
+                  subject: p.subjectName,
                   word: josaMatch[0],
                   snippet: clean + " ⚠️ [조사 분리 띄어쓰기 오류 의심]"
                 });
@@ -442,7 +439,8 @@
               if (/(하고|하며|위해|통해|대한|있는|은|는|이|가|을|를)\.$/.test(clean)) {
                 issues.push({
                   page: p.page,
-                  student: p.studentName || "학생",
+                  student: p.studentName,
+                  subject: p.subjectName,
                   word: clean.slice(-3),
                   snippet: clean + " ⚠️ [서술어 누락/비문 의심]"
                 });
@@ -462,12 +460,20 @@
             p.sentences.forEach(s => {
               const clean = s.trim();
               if (!clean) return;
+
+              // 온점 2개 오류
               const doubleDot = clean.match(/\b\d{4}\.\.\d{1,2}\.\d{1,2}\.?/);
-              if (doubleDot) { issues.push({ page: p.page, student: p.studentName || "학생", word: doubleDot[0], snippet: clean + " ⚠️ [날짜 온점 2개(..) 오류]" }); return; }
+              if (doubleDot) { issues.push({ page: p.page, student: p.studentName, subject: p.subjectName, word: doubleDot[0], snippet: clean + " ⚠️ [날짜 온점 2개(..) 오류]" }); return; }
+
+              // 날짜 내 공백 오류
               const spaceDate = clean.match(/\b\d{4}\.\s+\d{1,2}\.|\b\d{4}\.\d{1,2}\.\s+\d{1,2}\./);
-              if (spaceDate) { issues.push({ page: p.page, student: p.studentName || "학생", word: spaceDate[0], snippet: clean + " ⚠️ [날짜 내 비정상 공백 오류]" }); return; }
+              if (spaceDate) { issues.push({ page: p.page, student: p.studentName, subject: p.subjectName, word: spaceDate[0], snippet: clean + " ⚠️ [날짜 내 비정상 공백 오류]" }); return; }
+
+              // 끝 온점 누락 오류 (단, 2026.07.14. 등 온전히 끝난 것은 완벽 제외)
               const missingEndDot = clean.match(/\b(\d{4}\.\d{1,2}\.\d{1,2})(?!\.)/);
-              if (missingEndDot) issues.push({ page: p.page, student: p.studentName || "학생", word: missingEndDot[0], snippet: clean + " ⚠️ [날짜 끝 온점(.) 누락 오류]" });
+              if (missingEndDot) {
+                issues.push({ page: p.page, student: p.studentName, subject: p.subjectName, word: missingEndDot[0], snippet: clean + " ⚠️ [날짜 끝 온점(.) 누락 오류]" });
+              }
             });
           });
           return issues.length > 0 ? { pass: false, issues, msg: `잘못된 날짜 표기 형식 총 ${issues.length}건 검출` } : { pass: true, msg: "날짜 표준 표기 규격(YYYY.MM.DD.) 모두 준수" };
@@ -548,24 +554,20 @@
 
       // === [자율] ===
       {
-        // ★ 자치회 임원 및 기간 전체 완벽 추출 (원형 텍스트 및 서술형 전체 스캔)
         id: 16, area: "자율",
         title: "[더블체크] 학급·전교 자치회 임원 종류 및 재임기간",
         req: "학급자치회(회장 1명, 부회장 1명) 및 전교자치회 임원 종류와 재임기간(1·2학년: 3월 1일~학년말, 3학년: 3월 1일~졸업일) 정확성 더블체크 (년, 월, 일 전체 기간 표기)",
         check: function(f, n, raw) {
           const issues = [];
-          
           raw.forEach(p => {
             const lines = p.text.split('\n');
             lines.forEach(line => {
               const clean = line.trim();
               if (clean.includes("대부고등학교장") || clean.includes("반 번호 성명")) return;
 
-              // 자치회 관련 키워드 스캔
               if (/(학\s*급\s*자\s*치\s*회|학\s*생\s*자\s*치\s*회|전\s*교\s*자\s*치\s*회|자\s*치\s*회|회\s*장|부\s*회\s*장)/.test(clean)) {
                 if (clean.includes("회장") || clean.includes("부회장") || clean.includes("자치회")) {
                   const matchWord = clean.match(/(학\s*급\s*자\s*치\s*회\s*회\s*장|학\s*급\s*자\s*치\s*회\s*부\s*회\s*장|학\s*급\s*회\s*장|학\s*급\s*부\s*회\s*장|전\s*교\s*회\s*장|전\s*교\s*부\s*회\s*장|자\s*치\s*회\s*회\s*장|회\s*장|부\s*회\s*장|자\s*치\s*회)/);
-                  
                   if (!issues.some(iss => iss.snippet === clean)) {
                     issues.push({
                       page: p.page,
@@ -578,7 +580,6 @@
               }
             });
           });
-
           return issues.length > 0 ? { pass: false, isDoubleCheck: true, issues, msg: `자치회 임원 기재 총 ${issues.length}건 확인 (더블체크 대상)` } : { pass: true, msg: "자치활동 임원 기재 내역 없음" };
         }
       },
@@ -607,7 +608,7 @@
               const clean = s.trim();
               if (clean.includes("자율동아리") || clean.includes("자율 동아리") || clean.includes("방송부") || clean.includes("엑시트") || clean.includes("대부얼")) {
                 const isValid = /[가-힣0-9a-zA-Z\s]+\([가-힣0-9a-zA-Z\s]+\)/.test(clean);
-                issues.push({ page: p.page, student: p.studentName || "학생", word: "자율동아리", snippet: clean + (isValid ? " ✓ [양식 규격 준수]" : " ⚠️ ['동아리명(소개)' 괄호 양식 확인 필요]") });
+                issues.push({ page: p.page, student: p.studentName, subject: p.subjectName, word: "자율동아리", snippet: clean + (isValid ? " ✓ [양식 규격 준수]" : " ⚠️ ['동아리명(소개)' 괄호 양식 확인 필요]") });
               }
             });
           });
@@ -663,6 +664,7 @@
 
       // === [세특] ===
       {
+        // ★ 순회교육 변형 표기 및 띄어쓰기 경고 완벽 노출 (과목명 연동)
         id: 27, area: "세특",
         title: "과목별 세특 전 학생 입력 (순회교육 사유 더블체크)",
         req: "모든 교과의 모든 학생을 대상으로 세특 입력 완료 여부 점검. '순회교육으로 특이사항 없음' 등 미기재 정당 사유 기재 건은 확인을 위해 더블체크 표시 (띄어쓰기 불일치 시 경고)",
@@ -678,6 +680,7 @@
                   issues.push({
                     page: p.page,
                     student: p.studentName || "학생",
+                    subject: p.subjectName || "과세특",
                     word: "순회교육",
                     snippet: clean + (isExact ? " ✓ [표준 표기 준수]" : " ⚠️ [띄어쓰기 불일치 경고: 표준 표기 '순회교육으로 특이사항 없음.' 권장]")
                   });
@@ -729,7 +732,7 @@
           n.forEach(p => {
             p.sentences.forEach(s => {
               if (s.includes("읽음") && !s.includes("(") && !s.includes(")")) {
-                issues.push({ page: p.page, student: p.studentName || "학생", word: "도서명", snippet: s + " ⚠️ [도서명 뒤 저자 괄호 표기 누락 추정]" });
+                issues.push({ page: p.page, student: p.studentName, subject: p.subjectName, word: "도서명", snippet: s + " ⚠️ [도서명 뒤 저자 괄호 표기 누락 추정]" });
               }
             });
           });
@@ -849,11 +852,11 @@
 
           validLines.push(line);
         }
-        return { page: p.page, text: validLines.join('\n'), studentName: p.studentName };
+        return { page: p.page, text: validLines.join('\n'), studentName: p.studentName, subjectName: p.subjectName };
       });
     }
 
-    // ★ 줄바꿈 문장 결합 복원 + 고아 마침표 복원 엔진
+    // ★ 순수 서술형 칸 독립 추출 & 고아 마침표 복원
     function extractPureNarratives(filteredPages) {
       let carriedOverSentence = "";
       let sentenceOriginPage = 1;
@@ -893,8 +896,11 @@
             inNarrative = false;
           }
 
+          // 표 헤더 라벨 줄 자체는 서술문에서 제외
+          if (compact === "세부능력및특기사항" || compact === "특기사항") continue;
+
           if (inNarrative) {
-            // ★ 줄 처음에 덩그러니 떨어진 고아 마침표(". 형태의...")를 앞줄 끝으로 붙여줌
+            // 줄 맨 처음에 덜렁 떨어진 고아 마침표(". 형태의...")는 앞줄 끝으로 붙여줌
             if (trimmed.startsWith('.') && currentBuffer.length > 0) {
               currentBuffer += ".";
               trimmed = trimmed.slice(1).trim();
@@ -907,12 +913,12 @@
             }
             currentBuffer += trimmed;
 
-            // 소괄호 `(...)` 안 온점 완벽 보호 (§)
+            // 소괄호 안 온점 보호
             let protectedText = currentBuffer.replace(/\(([^)]+)\)/g, function(match, innerContent) {
               return '(' + innerContent.replace(/\./g, '§') + ')';
             });
 
-            // 마침표(`.`), 물음표, 느낌표로 완결되었을 때만 문장 분리
+            // 진짜 문장 종결 마침표로 끝났을 때만 분리
             if (/[.?!]$/.test(trimmed) || /:\s*$/.test(trimmed)) {
               const sList = protectedText.split(/(?<=[.?!])\s+/);
               
@@ -943,12 +949,13 @@
         return {
           page: p.page,
           sentences: completeSentences,
-          studentName: p.studentName
+          studentName: p.studentName,
+          subjectName: p.subjectName
         };
       });
     }
 
-    // 파일 로드 핸들러 (X좌표 기반 표 열 분리 & 학생 이름 정확 매핑)
+    // 파일 로드 핸들러 (X좌표 기반 컬럼 2단 분리 & 외계어 뒤섞임 완전 해결)
     async function handleFile(event) {
       const file = event.target.files[0];
       if (!file) return;
@@ -962,6 +969,7 @@
 
       const rawPagesData = [];
       let latestStudentName = "학생";
+      let latestSubjectName = "과목";
 
       try {
         if (file.name.toLowerCase().endsWith('.pdf')) {
@@ -991,15 +999,18 @@
             const page = await pdf.getPage(pageNum);
             const viewport = page.getViewport({ scale: 1.0 });
             const pageHeight = viewport.height;
+            const pageWidth = viewport.width;
             const footerCutoff = Math.max(80, pageHeight * 0.10);
             const headerCutoff = pageHeight * 0.93;
 
             const textContent = await page.getTextContent();
             const items = textContent.items;
 
-            // 1단계: 상단 표 헤더 "성 명" 위치 파악 및 학생 이름 스캔
+            // 1) 학생 이름 및 과목명 추출 (표 헤더 위치 스캔)
             for (let i = 0; i < items.length; i++) {
               const str = items[i].str.trim();
+
+              // 학생 이름 감지
               if (str === "성 명" || str === "성명" || str.includes("성명")) {
                 for (let j = i + 1; j < Math.min(items.length, i + 12); j++) {
                   const candidate = items[j].str.trim();
@@ -1011,26 +1022,57 @@
                   }
                 }
               }
+
+              // 과목/영역명 감지
+              if (str.includes("과 목") || str.includes("영 역")) {
+                for (let j = i + 1; j < Math.min(items.length, i + 8); j++) {
+                  const cand = items[j].str.trim();
+                  if (cand && !['학 년', '학기', '번 호', '성 명', '특기사항', '세부능력'].includes(cand)) {
+                    if (/^[가-힣A-Za-z0-9ⅠⅡ·\s]{2,15}$/.test(cand)) {
+                      latestSubjectName = cand;
+                      break;
+                    }
+                  }
+                }
+              }
             }
 
-            // 2단계: 행별로 Y좌표 그룹핑 및 X좌표 정렬
-            const lineMap = new Map();
+            // 2) ★ [핵심 혁신]: X좌표 기준 좌측 열(번호/성명/과목)과 우측 열(특기사항 본문) 물리적 완전 분리!
+            // 나이스의 서술형 본문 칸은 대략 페이지 가로 너비의 28%~35% 지점(약 170pt) 이후에 시작됩니다.
+            const contentBoundaryX = pageWidth * 0.28;
+
+            const narrativeItems = [];
             items.forEach(it => {
               const y = it.transform[5];
-              if (y < footerCutoff || y > headerCutoff) return; // 꼬리말/헤더 배제
+              const x = it.transform[4];
+              if (y < footerCutoff || y > headerCutoff) return; // 꼬리말/상단 헤더 배제
 
+              // 좌측 열에 위치한 과목명 단서 업데이트
+              if (x < contentBoundaryX && it.str.trim().length >= 2 && !it.str.includes("대부고")) {
+                const leftWord = it.str.trim();
+                if (/^[가-힣]{2,8}$/.test(leftWord) && !['세부능력', '특기사항', '학생정보', '학적사항'].includes(leftWord)) {
+                  latestSubjectName = leftWord;
+                }
+              }
+
+              // 우측 서술형 본문 칸 안의 텍스트만 전용 추출! (외계어 뒤섞임 원천 차단)
+              if (x >= contentBoundaryX - 10) {
+                narrativeItems.push(it);
+              }
+            });
+
+            // 3) 우측 본문 텍스트만 행 단위(Y좌표) 정렬
+            const lineMap = new Map();
+            narrativeItems.forEach(it => {
+              const y = it.transform[5];
               let foundY = null;
               for (let ey of lineMap.keys()) {
                 if (Math.abs(ey - y) <= 4.0) { foundY = ey; break; }
               }
-              if (foundY === null) {
-                lineMap.set(y, [it]);
-              } else {
-                lineMap.get(foundY).push(it);
-              }
+              if (foundY === null) lineMap.set(y, [it]);
+              else lineMap.get(foundY).push(it);
             });
 
-            // Y좌표 내림차순(위->아래) 정렬
             const sortedYs = Array.from(lineMap.keys()).sort((a, b) => b - a);
             let pageText = "";
 
@@ -1045,18 +1087,13 @@
                 const w = it.width || (str.length * 9);
                 const h = it.height || Math.abs(it.transform[3]) || 10;
 
-                // 왼쪽 열에 단독으로 있는 번호/이름 셀은 서술형 본문 결합에서 분리
-                if (x < 130 && (/^\d{1,2}$/.test(str.trim()) || str.trim() === latestStudentName)) {
-                  return; // 본문 줄 앞머리에 학생 이름이 붙는 현상 차단
-                }
-
                 if (prevXEnd !== null) {
                   const gap = x - prevXEnd;
-                  // 띄어쓰기 2칸(넓은 간격) 감지
-                  if (gap >= Math.max(7.5, h * 0.75)) {
-                    lineStr += "  ";
-                  } else if (gap >= Math.max(1.8, h * 0.20)) {
-                    lineStr += " ";
+                  // 폰트 높이 대비 정밀 자간 간격 판정
+                  if (gap >= Math.max(7.5, h * 0.70)) {
+                    lineStr += "  "; // 실제 2칸 공백
+                  } else if (gap >= Math.max(1.8, h * 0.18)) {
+                    lineStr += " "; // 일반 1칸 공백
                   }
                 }
                 lineStr += str;
@@ -1068,12 +1105,17 @@
               }
             });
 
-            rawPagesData.push({ page: pageNum, text: pageText, studentName: latestStudentName });
+            rawPagesData.push({
+              page: pageNum,
+              text: pageText,
+              studentName: latestStudentName,
+              subjectName: latestSubjectName
+            });
             page.cleanup();
           }
         } else {
           const text = await file.text();
-          rawPagesData.push({ page: 1, text: text, studentName: "학생" });
+          rawPagesData.push({ page: 1, text, studentName: "학생", subjectName: "과목" });
         }
 
         loading.innerText = "🔍 10대 영역별 기재 점검표 대조 실행 중...";
@@ -1174,11 +1216,13 @@
                   `<span class="highlight-word">${iss.word}</span>`
                 );
                 const studentLabel = `<span class="student-badge">${iss.student || '학생'}</span>`;
+                const subjectLabel = iss.subject ? `<span class="subject-badge">${iss.subject}</span>` : '';
                 return `
                   <div class="detected-row">
                     <div class="detected-text">
                       <span class="page-tag ${isBlue ? 'blue' : ''}">${iss.page}페이지</span>
                       ${studentLabel}
+                      ${subjectLabel}
                       <span>${highlighted}</span>
                     </div>
                     <select class="item-select ${isBlue ? 'select-need-check' : 'select-need-fix'}" onchange="handleItemStatusChange(this)">
@@ -1218,9 +1262,7 @@
             </div>
             ${issuesHtml}
           </td>
-          <td class="td-status">
-            ${statusTagHtml}
-          </td>
+          <td class="td-status">${statusTagHtml}</td>
         `;
         tbody.appendChild(tr);
       });
